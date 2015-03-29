@@ -61,7 +61,10 @@ for m in (img_gray, 255-mask):
 print(rect)
 if rect[2] != -90.0:
     M = cv2.getRotationMatrix2D(rect[0],rect[2],1)
-    img_scale = cv2.warpAffine(img_scale,M,(rows,cols))
+    # img_scale = cv2.warpAffine(img_scale,M,(rows,cols))
+    dst = cv2.cv.fromarray(img_scale.copy())
+    cv2.cv.WarpAffine(cv2.cv.fromarray(img_scale),dst,cv2.cv.fromarray(M),flags=cv2.INTER_LINEAR+8,fillval=(255,255,255))
+    img_scale = np.asarray(dst)
     #img_lev = pre_levels(img_scale, 200, 255)
     img_lev = pre_levels(img_scale, 0, 170)
     img_lev = pre_levels(img_lev, 100, 255)
