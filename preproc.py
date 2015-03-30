@@ -41,6 +41,27 @@ def pre_deskew(img):
 
 img_rgb = cv2.imread(sys.argv[1])
 img_scale = cv2.resize(img_rgb, (0, 0), fx=2.0, fy=2.0)
+cols,rows,_ = img_scale.shape
+
+WNS = 20
+
+def pre_whiteness(roi):
+    black = cv2.inRange(roi, np.array([0,0,0]), np.array([100,100,100]))
+    black_inv = cv2.bitwise_not(black)
+
+    white = np.zeros((len(roi), len(roi[0]), 3), np.uint8)
+    white[:] = (255,255,255)
+
+    white_roi = cv2.bitwise_and(white, white, mask=black)
+    return cv2.add(roi, white_roi)
+
+white_roi = [
+    pre_whiteness(img_scale[:WNS]),
+    pre_whiteness(img_scale[-WNS:]),
+    pre_whiteness(img_scale[:,-WNS:]),
+    pre_whiteness(img_scale[:,:WNS]),
+]
+
 #img_lev = pre_levels(img_scale, 200, 255)
 #img_lev = pre_levels(img_scale, 0, 170)
 img_lev = pre_levels(img_scale, 230, 255)
@@ -48,10 +69,6 @@ _,img_gray = pre_blur(img_lev)
 
 mask = cv2.inRange(img_gray, 240, 255)
 
-#img_gray = pre_threshold(pre_blur(pre_levels(img_lev, 200, 255))[1])
-cols,rows = img_gray.shape
-
-#cv2.imshow('norm', 255-mask)
 for m in (img_gray, 255-mask):
     n = cv2.moments(m)
     print(n['mu11']/n['mu02'])
@@ -65,7 +82,7 @@ for m in (img_gray, 255-mask):
         break
 
 print(rect[2])
-cv2.imshow('normgr4', m)
+#cv2.imshow('normgr4', m)
 box = cv2.boxPoints(rect)
 box = np.int0(box)
 im = img_scale.copy()
@@ -85,7 +102,11 @@ if abs(rect[2]) < 20:
     M = cv2.getRotationMatrix2D(rect[0],rect[2],1)
     # img_scale = cv2.warpAffine(img_scale,M,(rows,cols))
     dst = cv2.cv.fromarray(img_scale.copy())
-    cv2.cv.WarpAffine(cv2.cv.fromarray(img_scale),dst,cv2.cv.fromarray(M),flags=cv2.INTER_LINEAR+8,fillval=(0,0,0)) #fillval=(255,255,255))
+#    img_scale[:WNS] = white_roi[0]
+#    img_scale[-WNS:] = white_roi[1]
+#    img_scale[:,-WNS:] = white_roi[2]
+#    img_scale[:,:WNS] = white_roi[3]
+    cv2.cv.WarpAffine(cv2.cv.fromarray(img_scale),dst,cv2.cv.fromarray(M),flags=cv2.INTER_LINEAR+8,fillval=(255,255,255))
     img_scale = np.asarray(dst)
     #img_lev = pre_levels(img_scale, 200, 255)
 #    img_lev = pre_levels(img_scale, 0, 170)
@@ -98,7 +119,10 @@ img_thr = pre_threshold(img_gray)
 #key = cv2.waitKey(0)
 
 kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 6))
+#kernel = np.ones((2,2), np.uint8)
 closed = cv2.morphologyEx(img_thr, cv2.MORPH_CLOSE, kernel)
+#closed = cv2.erode(img_thr, kernel, iterations=2)
+#closed = img_thr
 
 contours,_ = cv2.findContours(closed.copy(), cv2.RETR_LIST, 4)
 cnts = sorted(contours, key = cv2.contourArea, reverse = True)
@@ -110,7 +134,7 @@ for cnt in cnts:
     approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
     print(cv2.contourArea(cnt))
     area = cv2.contourArea(cnt)
-    if area > 80 and area < 2500:
+    if area > 80 and area < 2000:
         [x,y,w,h] = cv2.boundingRect(cnt)
 
 #        cv2.drawContours(img_rgb, [approx], -1, (0, 255, 0), 3)
