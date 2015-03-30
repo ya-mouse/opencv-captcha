@@ -25,7 +25,7 @@ def pre_blur(image):
     return (blur, img_gray)
 
 def pre_threshold(image):
-    ret,img_thr = cv2.threshold(image,0,255,cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    ret,img_thr = cv2.threshold(image,0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     return img_thr
 
 def pre_deskew(img):
@@ -40,9 +40,10 @@ def pre_deskew(img):
     return img
 
 img_rgb = cv2.imread(sys.argv[1])
-img_scale = cv2.resize(img_rgb, (0, 0), fx=4.0, fy=4.0)
-img_lev = pre_levels(img_scale, 200, 255)
-#img_lev = pre_levels(img_scale, 0, 170)
+img_scale = cv2.resize(img_rgb, (0, 0), fx=2.0, fy=2.0)
+#img_lev = pre_levels(img_scale, 200, 255)
+img_lev = pre_levels(img_scale, 0, 170)
+img_lev = pre_levels(img_lev, 200, 255)
 _,img_gray = pre_blur(img_lev)
 
 mask = cv2.inRange(img_gray, 240, 255)
@@ -50,8 +51,8 @@ mask = cv2.inRange(img_gray, 240, 255)
 #img_gray = pre_threshold(pre_blur(pre_levels(img_lev, 200, 255))[1])
 cols,rows = img_gray.shape
 
-cv2.imshow('norm', 255-mask)
-for m in (img_gray, 255-mask):
+#cv2.imshow('norm', 255-mask)
+for m in (img_gray.copy(), 255-mask):
     contours,_ = cv2.findContours(m, cv2.RETR_EXTERNAL, 4)
     cnt = sorted(contours, key = cv2.contourArea, reverse = True)[0]
     rect = cv2.minAreaRect(cnt)
@@ -59,7 +60,7 @@ for m in (img_gray, 255-mask):
         break
 
 print(rect)
-if rect[2] != -90.0:
+if abs(rect[2]) < 20:
     M = cv2.getRotationMatrix2D(rect[0],rect[2],1)
     # img_scale = cv2.warpAffine(img_scale,M,(rows,cols))
     dst = cv2.cv.fromarray(img_scale.copy())
@@ -67,10 +68,49 @@ if rect[2] != -90.0:
     img_scale = np.asarray(dst)
     #img_lev = pre_levels(img_scale, 200, 255)
     img_lev = pre_levels(img_scale, 0, 170)
-    img_lev = pre_levels(img_lev, 100, 255)
+#    img_lev = pre_levels(img_lev, 100, 255)
     _,img_gray = pre_blur(img_lev)
 
+cv2.imshow('norm', img_gray)
+key = cv2.waitKey(0)
 img_thr = pre_threshold(img_gray)
 
-cv2.imshow('norm', img_scale)
+kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 8))
+closed = cv2.morphologyEx(img_thr, cv2.MORPH_CLOSE, kernel)
+
+contours,_ = cv2.findContours(closed.copy(), cv2.RETR_EXTERNAL, 4)
+cnts = sorted(contours, key = cv2.contourArea, reverse = True)
+
+responses = []
+
+for cnt in cnts:
+    peri = cv2.arcLength(cnt, True)
+    approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+    print(cv2.contourArea(cnt))
+    area = cv2.contourArea(cnt)
+    if area > 200 and area < 2500:
+        [x,y,w,h] = cv2.boundingRect(cnt)
+
+#        cv2.drawContours(img_rgb, [approx], -1, (0, 255, 0), 3)
+#        cv2.imshow('norm',img_rgb)
+#        key = cv2.waitKey(0)
+        if  h>30:
+            cv2.rectangle(img_scale,(x,y),(x+w,y+h),(0,0,255),2)
+            roi = closed[y:y+h,x:x+w]
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4))
+            roi = cv2.morphologyEx(roi, cv2.MORPH_CLOSE, kernel)
+#            roi = cv2.erode(roi, None, iterations = 2)
+            roismall = cv2.resize(roi,(10,10))
+            cv2.imshow('norm3',img_scale)
+            key = cv2.waitKey(0)
+
+            if key == 27:  # (escape to quit)
+                sys.exit()
+            responses.append([x, w, roi, '_'])
+#            elif key in keys:
+#                responses.append(int(chr(key)))
+#                sample = roismall.reshape((1,100))
+#                samples = np.append(samples,sample,0)
+
+cv2.imshow('norm', closed)
 key = cv2.waitKey(0)
