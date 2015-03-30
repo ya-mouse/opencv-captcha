@@ -43,7 +43,7 @@ img_rgb = cv2.imread(sys.argv[1])
 img_scale = cv2.resize(img_rgb, (0, 0), fx=2.0, fy=2.0)
 #img_lev = pre_levels(img_scale, 200, 255)
 #img_lev = pre_levels(img_scale, 0, 170)
-img_lev = pre_levels(img_scale, 200, 255)
+img_lev = pre_levels(img_scale, 230, 255)
 _,img_gray = pre_blur(img_lev)
 
 mask = cv2.inRange(img_gray, 240, 255)
@@ -52,19 +52,20 @@ mask = cv2.inRange(img_gray, 240, 255)
 cols,rows = img_gray.shape
 
 #cv2.imshow('norm', 255-mask)
-for m in (img_gray, cv2.flip(img_gray, 1), 255-mask, cv2.flip(255-mask, 1)):
+for m in (img_gray, 255-mask):
     n = cv2.moments(m)
     print(n['mu11']/n['mu02'])
     contours,_ = cv2.findContours(m, cv2.RETR_EXTERNAL, 2)
     cnt = sorted(contours, key = cv2.contourArea, reverse = True)[0]
     rect = cv2.minAreaRect(cnt)
     print('S', rect[2])
+    if abs(rect[2]) > 45:
+        rect = (rect[0], rect[1], 90.0 + rect[2])
     if abs(rect[2]) < 20 and abs(rect[2]) != 0: # != -90.0 and rect[2] != 0.0:
         break
 
 print(rect[2])
-cv2.imshow('normgr4', mask)
-rect = (rect[0], rect[1], -rect[2])
+cv2.imshow('normgr4', m)
 box = cv2.boxPoints(rect)
 box = np.int0(box)
 im = img_scale.copy()
@@ -75,7 +76,7 @@ img_cnt = np.array([ [[0,0]], [[rows,0]], [[rows, cols]], [[0, cols]] ])
 cv2.drawContours(im,[approx],0,(0,0,255),5)
 #cv2.fillPoly(im, [box], (0,0,255))
 cv2.drawContours(im, [img_cnt], 0,(0,255,0),2)
-im = cv2.flip(im, 1)
+#im = cv2.flip(im, 1)
 
 #cv2.imshow('norm', im)
 #key = cv2.waitKey(0)
@@ -94,7 +95,7 @@ if abs(rect[2]) < 20:
 img_thr = pre_threshold(img_gray)
 
 #cv2.imshow('normgr', img_gray)
-key = cv2.waitKey(0)
+#key = cv2.waitKey(0)
 
 kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 6))
 closed = cv2.morphologyEx(img_thr, cv2.MORPH_CLOSE, kernel)
@@ -109,29 +110,29 @@ for cnt in cnts:
     approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
     print(cv2.contourArea(cnt))
     area = cv2.contourArea(cnt)
-    if area > 200 and area < 2500:
+    if area > 80 and area < 2500:
         [x,y,w,h] = cv2.boundingRect(cnt)
 
 #        cv2.drawContours(img_rgb, [approx], -1, (0, 255, 0), 3)
 #        cv2.imshow('norm',img_rgb)
 #        key = cv2.waitKey(0)
-        if  h>30:
+        if  h>25:
             cv2.rectangle(img_scale,(x,y),(x+w,y+h),(0,0,255),2)
             roi = closed[y:y+h,x:x+w]
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4))
             roi = cv2.morphologyEx(roi, cv2.MORPH_CLOSE, kernel)
 #            roi = cv2.erode(roi, None, iterations = 2)
             roismall = cv2.resize(roi,(10,10))
-            cv2.imshow('norm3',img_scale)
-            key = cv2.waitKey(0)
+#            cv2.imshow('norm3',img_scale)
+#            key = cv2.waitKey(0)
 
-            if key == 27:  # (escape to quit)
-                sys.exit()
+#            if key == 27:  # (escape to quit)
+#                sys.exit()
             responses.append([x, w, roi, '_'])
 #            elif key in keys:
 #                responses.append(int(chr(key)))
 #                sample = roismall.reshape((1,100))
 #                samples = np.append(samples,sample,0)
 
-cv2.imshow('norm', im)
+cv2.imshow('norm', img_scale)
 key = cv2.waitKey(0)
