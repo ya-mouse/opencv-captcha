@@ -242,13 +242,10 @@ for r in preresponses:
     cnts = sorted(contours, key = cv2.contourArea, reverse = True)
     found = False
     for cnt in cnts:
-        peri = cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
 #        print(cv2.contourArea(cnt))
         area = cv2.contourArea(cnt)
         if area > 60 and area < 2500:
             [x,y,w,h] = cv2.boundingRect(cnt)
-            w0 = w
             if h>25:
                 if x < 8:
                     w += x
@@ -256,9 +253,6 @@ for r in preresponses:
                 if w + w*0.05 >= r[2]:
                     w = r[2]
                 x += r[0]
-#                roi = img_dbg[r[1]:(r[1]+y+h),r[0]:(r[0]+x+w0)]
-#                cv2.drawContours(roi, [approx], -1, (0, 255, 0), 2)
-#                img_dbg[r[1]:(r[1]+y+h),r[0]:(r[0]+x+w0)] = roi
                 cv2.rectangle(img_dbg,(x,miny),(x+w,maxy),(0,255,0),2)
                 roi = img_scale[miny:maxy,x:x+w]
                 responses.append([x, miny, w, roi, '_'])
@@ -347,7 +341,7 @@ closed4 = cv2.morphologyEx(edges2, cv2.MORPH_CLOSE, kernel)
 #cv2.imshow('n1', edges2)
 #cv2.imshow('img', roi_and)
 
-cv2.imshow('norm1', edges) #cv2.resize(cv2.resize(img_rgb2, (0, 0), fx=0.5, fy=0.5), (0,0), fx=8.0, fy=8.0))
+#cv2.imshow('norm', closed) #cv2.resize(cv2.resize(img_rgb2, (0, 0), fx=0.5, fy=0.5), (0,0), fx=8.0, fy=8.0))
 cv2.imshow('norm', cv2.resize(roi_and, (0, 0), fx=2.0, fy=2.0)) #, cv2.COLOR_BGR2GRAY)))
 cv2.imshow('norm2', img_dbg) # thinning(cv2.resize(closed, (0, 0), fx=4.0, fy=4.0))) #, cv2.COLOR_BGR2GRAY)))
 #cv2.imshow('n1', wat[0])
