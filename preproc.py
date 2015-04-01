@@ -6,122 +6,152 @@ import numpy as np
 
 from thinning import thinning
 
-def pre_levels(image, minv, maxv, gamma=1.0):
-    img_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+class Preprocessor:
+    def __init__(self, image):
+        self._orig = image
+        self._img = image.copy()
 
-    # Get Value channel
-    v2 = img_hsv[:,:,2]
-    h = img_hsv[:,:,0]
-    s = img_hsv[:,:,1]
-    cv2.imshow('h', h)
-    cv2.imshow('s', s)
-    cv2.imshow('v', v2)
-#    cv2.waitKey(0)
+    @property
+    def img(self):
+        return self._img
 
-    interval = maxv - minv
+    def save(self):
+        self._orig = self._img.copy()
 
-    _ = None
-    if maxv < 255:
-        _,v2 = cv2.threshold(v2, maxv, 255, cv2.THRESH_TRUNC)
-    if minv > 0:
-        _,v2 = cv2.threshold(v2, minv, 255, cv2.THRESH_TOZERO)
-    if _ is not None:
-        cv2.normalize(v2, v2, 0, 255, cv2.NORM_MINMAX)
-        img_hsv[:,:,2] = v2
-    return cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR)
+    def reset(self):
+        self._img = self._orig.copy()
 
-def pre_blur(image):
-    blur = cv2.GaussianBlur(image,(5,5),0)
-    img_gray = cv2.cvtColor(blur, cv2.COLOR_BGR2GRAY)
-    return (blur, img_gray)
+    def scale(self, factor, interpolation=cv2.INTER_LINEAR):
+        self._img = cv2.resize(self._img, (0,0), fx=factor, fy=factor, interpolation=interpolation)
 
-def pre_threshold(image):
-#    img_hsv = cv2.cvtColor(cv2.cvtColor(image, cv2.COLOR_GRAY2BGR), cv2.COLOR_BGR2HSV)
-    img_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    hsv_h = img_hsv[:,:,0]
-    hsv_s = img_hsv[:,:,1]
-    hsv_v = img_hsv[:,:,2]
-    cv2.imshow('v1', image)
-    cv2.imshow('th_h', hsv_h)
-    cv2.imshow('th_s', hsv_s)
-    cv2.imshow('th_v', hsv_v)
-    ret,img_thr = cv2.threshold(hsv_s,0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    return img_thr
+    def levels(self, minv, maxv, gamma=1.0, img=None):
+        if img is None:
+            img = self._img
 
-def pre_deskew2(img):
-    m = cv2.moments(img)
-    rows,cols = img.shape
-    if abs(m['mu02']) < 1e-2:
-        return img.copy()
-    skew = m['mu11']/m['mu02']
-    M = np.float32([[1, skew, -0.5*cols*skew], [0, 1, 0]])
-    M = cv2.getRotationMatrix2D((cols/2,rows/2),90,1)
-    img = cv2.warpAffine(img,M,(cols, rows),flags=cv2.WARP_INVERSE_MAP|cv2.INTER_LINEAR)
-    return img
+        interval = maxv - minv
 
-def pre_whiteness(roi):
-    r = ((np.array([0,0,0]), np.array([80,80,80])))
-    black = cv2.inRange(roi, r[0], r[1])
-    black_inv = cv2.bitwise_not(black)
+        _ = None
+        if maxv < 255:
+            _,img = cv2.threshold(img, maxv, 255, cv2.THRESH_TRUNC)
+        if minv > 0:
+            _,img = cv2.threshold(img, minv, 255, cv2.THRESH_TOZERO)
+        if _ is not None:
+            cv2.normalize(img, img, 0, 255, cv2.NORM_MINMAX)
+        return _, img
 
-    white = np.zeros((len(roi), len(roi[0]), 3), np.uint8)
-    white[:] = (255,255,255)
+    def hsv_levels(self, minv, maxv, gamma=1.0, img=None, level=2):
+        if img is None:
+            img = self._img
+        img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-    roi = cv2.bitwise_and(roi, roi, mask=black_inv)
-    white_roi = cv2.bitwise_and(white, white, mask=black)
-    return cv2.add(roi, white_roi)
+        # Get Value channel
+        h = img_hsv[:,:,0]
+        s = img_hsv[:,:,1]
+        v = img_hsv[:,:,2]
+        lev = img_hsv[:,:,level]
+        cv2.imshow('lev_h', h)
+        cv2.imshow('lev_s', s)
+        cv2.imshow('lev_v', v)
+#        cv2.waitKey(0)
 
-def pre_deskew(img_rgb, img_gray, img_scale, border):
-    mask = cv2.inRange(img_gray, 240, 255)
+        _, lev = self.levels(minv, maxv, gamma, lev)
+        if _ is not None:
+            img_hsv[:,:,level] = lev
 
-    for m in (img_gray, 255-mask):
-        n = cv2.moments(m)
-        #print(n['mu11']/n['mu02'])
-        contours,_ = cv2.findContours(m, cv2.RETR_EXTERNAL, 2)
-        cnt = sorted(contours, key = cv2.contourArea, reverse = True)[0]
-        rect = cv2.minAreaRect(cnt)
-        if abs(rect[2]) > 45:
-            rect = (rect[0], rect[1], 90.0 + rect[2])
-        if abs(rect[2]) < 20 and abs(rect[2]) != 0: # != -90.0 and rect[2] != 0.0:
-            print('Skew: %.3f°' % rect[2])
-            break
+        return cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR)
 
-    #cv2.imshow('normgr4', m)
-    box = cv2.boxPoints(rect)
-    box = np.int0(box)
-    #im = img_scale.copy()
-    #peri = cv2.arcLength(box, True)
-    #approx = cv2.approxPolyDP(box, 0.02 * peri, True)
-    #img_cnt = np.array([ [[0,0]], [[rows,0]], [[rows, cols]], [[0, cols]] ])
+    def _blur(self, img, block=(5,5)):
+        return cv2.GaussianBlur(img, block, 0)
 
-    #cv2.drawContours(im,[approx],0,(0,0,255),5)
-    #cv2.fillPoly(im, [box], (0,0,255))
-    #cv2.drawContours(im, [img_cnt], 0,(0,255,0),2)
-    #im = cv2.flip(im, 1)
+    def blur(self, block=(5,5)):
+        self._img = self._blur(self._img, block)
 
-    if abs(rect[2]) < 20:
-        img_scale = img_scale.copy()
-        M = cv2.getRotationMatrix2D(rect[0],rect[2],1)
-        Mo = cv2.getRotationMatrix2D((rect[0][0]/2.0, rect[0][1]/2.0), rect[2],1)
-        # img_scale = cv2.warpAffine(img_scale,M,(rows,cols))
+    def hsv_threshold(self):
+        img_hsv = cv2.cvtColor(self._img, cv2.COLOR_BGR2HSV)
+        hsv_h = img_hsv[:,:,0]
+        hsv_s = img_hsv[:,:,1]
+        hsv_v = img_hsv[:,:,2]
+        cv2.imshow('th_img', self._img)
+        cv2.imshow('th_h', hsv_h)
+        cv2.imshow('th_s', hsv_s)
+        cv2.imshow('th_v', hsv_v)
+        ret,otsu = cv2.threshold(hsv_s,0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        return otsu
 
-        dst = cv2.cv.fromarray(img_scale.copy())
-        cv2.cv.WarpAffine(cv2.cv.fromarray(img_scale),dst,cv2.cv.fromarray(M),flags=cv2.INTER_LINEAR+8,fillval=(255,255,255))
-        img_scale = np.asarray(dst)
+    def threshold(self, gray=None):
+        if gray is None:
+            gray = self.gray()
+        ret, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        return otsu
 
-        dst = cv2.cv.fromarray(img_rgb.copy())
-        cv2.cv.WarpAffine(cv2.cv.fromarray(img_rgb),dst,cv2.cv.fromarray(Mo),flags=cv2.INTER_LINEAR+8,fillval=(255,255,255))
-        img_rgb = np.asarray(dst)
+    @staticmethod
+    def whiteness(roi):
+        r = ((np.array([0,0,0]), np.array([80,80,80])))
+        black = cv2.inRange(roi, r[0], r[1])
+        black_inv = cv2.bitwise_not(black)
 
-        #img_lev = pre_levels(img_scale, 200, 255)
-#        img_lev = pre_levels(img_scale, 0, 170)
+        white = np.zeros((len(roi), len(roi[0]), 3), np.uint8)
+        white[:] = (255,255,255)
 
-#        img_scale[:border]    = pre_whiteness(img_scale[:border])
-#        img_scale[-border:]   = pre_whiteness(img_scale[-border:])
-#        img_scale[:,-border:] = pre_whiteness(img_scale[:,-border:])
-#        img_scale[:,:border]  = pre_whiteness(img_scale[:,:border])
+        roi = cv2.bitwise_and(roi, roi, mask=black_inv)
+        white_roi = cv2.bitwise_and(white, white, mask=black)
+        return cv2.add(roi, white_roi)
 
-    return img_rgb, img_scale
+    def gray(self, img=None):
+        if img is None:
+            img = self._img
+        return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    def bgr(self, img=None):
+        if img is None:
+            img = self._img
+        return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+    def skew(self, minv, maxv, gamma=1.0):
+        #self._img = self.bgr(self.hsv_threshold())
+        lev = self.hsv_levels(minv, maxv, gamma)
+        gray = self.gray(self._blur(lev))
+#        cv2.imshow('skew_lev', lev)
+        mask = cv2.inRange(gray, 240, 255)
+
+        rect = None
+        for m in (gray, 255-mask):
+            n = cv2.moments(m)
+            #print(n['mu11']/n['mu02'])
+            contours,_ = cv2.findContours(m, cv2.RETR_EXTERNAL, 2)
+            if not contours:
+                continue
+            cnt = sorted(contours, key = cv2.contourArea, reverse = True)[0]
+            rect = cv2.minAreaRect(cnt)
+            if abs(rect[2]) > 45:
+                rect = (rect[0], rect[1], 90.0 + rect[2])
+            if abs(rect[2]) < 7 and abs(rect[2]) != 0: # != -90.0 and rect[2] != 0.0:
+                print('Skew: %.3f°' % rect[2])
+                break
+
+        if rect is None or rect[2] == 0:
+            return None
+        if abs(rect[2]) > 7:
+            return None
+        return rect
+
+    def rotate(self, rect, border=20, fill=(255,255,255)):
+        if not rect:
+            return
+
+        M = cv2.getRotationMatrix2D(rect[0], rect[2], 1)
+
+        dst = cv2.cv.fromarray(self._img.copy())
+        cv2.cv.WarpAffine(cv2.cv.fromarray(self._img), dst, cv2.cv.fromarray(M), flags=cv2.INTER_LINEAR+8, fillval=fill)
+        self._img = np.asarray(dst)
+
+            #img_lev = pre_levels(img_scale, 200, 255)
+#            img_lev = pre_levels(img_scale, 0, 170)
+
+        self._img[:border]    = Preprocessor.whiteness(self._img[:border])
+        self._img[-border:]   = Preprocessor.whiteness(self._img[-border:])
+        self._img[:,-border:] = Preprocessor.whiteness(self._img[:,-border:])
+        self._img[:,:border]  = Preprocessor.whiteness(self._img[:,:border])
 
 def water(img, thresh):
     kernel = np.ones((3,3),np.uint8)
@@ -156,39 +186,23 @@ if len(sys.argv) < 2:
 
 img_rgb = cv2.imread(sys.argv[1])
 
-#img_rgb = cv2.resize(cv2.resize(img_rgb, (0, 0), fx=0.5, fy=0.5), (0,0), fx=2.0, fy=2.0)
+pre = Preprocessor(img_rgb)
+pre.scale(2.0)
+skew = pre.skew(230, 255)
+if skew is None:
+    print('Retry')
+    skew = pre.skew(20, 100)
 
-img_scale = cv2.resize(img_rgb, (0, 0), fx=2.0, fy=2.0)
-cols,rows,_ = img_scale.shape
+pre.reset()
+#pre.scale(2.0, cv2.INTER_NEAREST)
+pre.scale(2.0, cv2.INTER_CUBIC)
+pre.rotate(skew)
+gray = pre.hsv_threshold()
 
-##img_lev = pre_levels(img_scale, 200, 255)
-##img_lev = pre_levels(img_scale, 0, 170)
-img_lev = pre_levels(img_scale, 200, 255)
-img_th = cv2.resize(pre_threshold(img_rgb), (0,0), fx=2.0, fy=2.0, interpolation=cv2.INTER_NEAREST) #cv2.cvtColor(img_scale, cv2.COLOR_BGR2GRAY))
-cv2.imshow('s', img_th)
-img_lev = pre_levels(cv2.cvtColor(img_th, cv2.COLOR_GRAY2BGR), 20, 100)
-cv2.imshow('l', img_lev)
-#img_lev = img_scale
-
-#_,img_gray = pre_blur(img_lev)
-img_gray = cv2.cvtColor(img_lev, cv2.COLOR_BGR2GRAY)
-
-img_rgb, img_scale = pre_deskew(img_rgb, img_gray, img_gray, 20)
-cv2.imshow('sc', img_scale)
-
-cv2.waitKey(0)
-#img_rgb2 = img_rgb
-img_rgb2 = cv2.bilateralFilter(img_rgb,9,200,10)
-img_rgb2 = cv2.resize(img_rgb2, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_NEAREST)
-img_rgb2 = cv2.resize(img_rgb2, (0, 0), fx=0.5, fy=0.5, interpolation=cv2.INTER_NEAREST)
-img_rgb2 = cv2.resize(img_rgb2, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_NEAREST)
-
-img_rgb3 = img_rgb2.copy()
-
-#img_rgb2 = pre_levels(img_rgb2, 150, 255)
-ret,img_mask = cv2.threshold(cv2.cvtColor(img_rgb2, cv2.COLOR_BGR2GRAY),0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+#ret,img_mask = cv2.threshold(cv2.cvtColor(img_rgb2, cv2.COLOR_BGR2GRAY),0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 #ret,img_mask = cv2.threshold(pre_blur(img_rgb2)[1],0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-edges2 = cv2.Canny(cv2.cvtColor(cv2.resize(img_rgb2, (0, 0), fx=1.0, fy=1.0, interpolation=cv2.INTER_NEAREST), cv2.COLOR_BGR2GRAY),50,150,apertureSize = 3)
+#edges2 = cv2.Canny(cv2.cvtColor(cv2.resize(img_rgb2, (0, 0), fx=1.0, fy=1.0, interpolation=cv2.INTER_NEAREST), cv2.COLOR_BGR2GRAY),50,150,apertureSize = 3)
+edges2 = cv2.Canny(gray,50,150,apertureSize = 3)
 #edges2 = cv2.Canny(cv2.cvtColor(img_rgb2, cv2.COLOR_BGR2GRAY),50,150,apertureSize = 3)
 #img_mask = cv2.adaptiveThreshold(cv2.cvtColor(img_rgb2, cv2.COLOR_BGR2GRAY),255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
 #            cv2.THRESH_BINARY_INV,11,2)
@@ -198,44 +212,43 @@ kernel = cv2.getStructuringElement(cv2.MORPH_CROSS, (1, 1))
 #edges2 = cv2.erode(edges2, kernel, iterations=1)
 #img_rgb2 = cv2.cvtColor(img_rgb2, cv2.COLOR_GRAY2BGR)
 
+# levels1: 25-200
+# levels2: 0-106
 
-img_lev = pre_levels(img_rgb3, 150, 255)
-_,img_gray = pre_blur(img_lev)
+l3 = cv2.cvtColor(pre.hsv_levels(170, 255, level=1), cv2.COLOR_BGR2HSV)[:,:,1]
+l4 = cv2.cvtColor(pre.hsv_levels(25, 200, level=1), cv2.COLOR_BGR2HSV)[:,:,1]
 
-img_thr = pre_threshold(img_gray)
+kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 9))
+l33 = cv2.morphologyEx(l4, cv2.MORPH_CLOSE, kernel)
 
-#cv2.imshow('v', img_thr)
-#cv2.waitKey(0)
+cv2.imshow('l3', l33)
+cv2.waitKey(0)
 
-#wat = water(img_scale, img_thr)
-
-kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 6))
-#kernel = np.ones((2,2), np.uint8)
-closed = cv2.morphologyEx(img_thr, cv2.MORPH_CLOSE, kernel)
-#closed = cv2.erode(img_thr, kernel, iterations=2)
-#closed = img_thr
-
-contours,_ = cv2.findContours(closed.copy(), cv2.RETR_LIST, 4)
+contours,_ = cv2.findContours(l33.copy(), cv2.RETR_LIST, 4)
 cnts = sorted(contours, key = cv2.contourArea, reverse = True)
 
 preresponses = []
 
+img_scale = pre.img
 img_dbg = img_scale.copy()
+
+cols,rows,_ = img_scale.shape
 
 miny = rows
 maxy = 0
 for cnt in cnts:
     peri = cv2.arcLength(cnt, True)
     approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-    # print(cv2.contourArea(cnt))
+    print(cv2.contourArea(cnt))
     area = cv2.contourArea(cnt)
-    if area > 80 and area < 2500:
+    if area > 50 and area < 2500:
         [x,y,w,h] = cv2.boundingRect(cnt)
+        print('{},{} {}x{}'.format(x,y,w,h))
 
 #        cv2.drawContours(img_rgb, [approx], -1, (0, 255, 0), 3)
 #        cv2.imshow('norm',img_rgb)
 #        key = cv2.waitKey(0)
-        if  h>25:
+        if h > 25 and x > 20:
             cv2.rectangle(img_dbg,(x,y),(x+w,y+h),(0,0,255),2)
             roi = img_scale[y:y+h,x:x+w]
 #            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4))
@@ -255,6 +268,9 @@ for cnt in cnts:
 #                sample = roismall.reshape((1,100))
 #                samples = np.append(samples,sample,0)
 
+cv2.imshow('norm', img_dbg)
+key = cv2.waitKey(0)
+
 def cut(img, rect):
     mask = np.zeros(img.shape[:2],np.uint8)
 
@@ -270,15 +286,18 @@ def cut(img, rect):
 miny -= 2
 responses = []
 for r in preresponses:
+    p = Preprocessor(r[3])
     im = r[3]
-    _,im = pre_blur(im)
+    p.blur()
+    cv2.imshow('norm', p.img)
+    key = cv2.waitKey(0)
 #    im = pre_levels(im, 0, 170)
 #    im = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
-    im = pre_threshold(im)
+    p.threshold(im)
 #    kernel = np.ones((2,2), np.uint8)
 #    im = cv2.erode(im, kernel, iterations=3)
 
-    contours,_ = cv2.findContours(im.copy(), cv2.RETR_LIST, 4)
+    contours,_ = cv2.findContours(p.img.copy(), cv2.RETR_LIST, 4)
     cnts = sorted(contours, key = cv2.contourArea, reverse = True)
     found = False
     for cnt in cnts:
@@ -317,6 +336,9 @@ for r in preresponses:
 #    cv2.imshow('norm', img_scale[(miny-5):(maxy+5),(rsp[0]-5):(rsp[0]+rsp[2]+5)])
 #    cv2.imshow('norm', im)
 #    key = cv2.waitKey(0)
+
+cv2.imshow('norm', img_dbg)
+key = cv2.waitKey(0)
 
 roi_mask = img_mask[10:-10,10:-10]
 roi_rgb2 = img_rgb2[10:-10,10:-10]
