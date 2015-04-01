@@ -225,6 +225,7 @@ img_rgb = cv2.imread(sys.argv[1])
 
 pre = Preprocessor(img_rgb)
 pre.scale(2.0)
+img_orig = pre.img.copy()
 skew = pre.skew(230, 255)
 if skew is None:
     print('Retry')
@@ -236,6 +237,7 @@ pre.scale(2.0, cv2.INTER_CUBIC)
 pre.rotate(skew)
 _, lev = pre.levels(106, 122, 8.58)
 th = pre.hsv_threshold(lev)
+
 kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 3))
 closed = cv2.morphologyEx(th, cv2.MORPH_CLOSE, kernel)
 th = pre.threshold(pre.gray(pre.hsv_levels(0, 172, 0.21, level=2)))
@@ -271,7 +273,7 @@ kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 4))
 l33 = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
 
 mask_and = cv2.bitwise_and(255-gray, 255-gray, mask=closed)
-cv2.imshow('255-mask_and', 255-mask_and)
+#cv2.imshow('255-mask_and', 255-mask_and)
 
 def mask_by_hsv(pre, gray=None):
     if gray is None:
@@ -310,7 +312,6 @@ cnts = sorted(contours, key = cv2.contourArea, reverse = True)
 preresponses = []
 
 img_scale = cv2.bitwise_and(pre.img, pre.img, mask=mask_and)
-img_orig = pre.img.copy()
 img_dbg = img_scale.copy()
 
 cols,rows,_ = img_scale.shape
@@ -417,9 +418,11 @@ for r in preresponses:
 #    cv2.imshow('norm', im)
 #    key = cv2.waitKey(0)
 
-img = np.ndarray((cols*2,rows,3), dtype=np.uint8)
+img = np.ndarray((cols*4,rows,3), dtype=np.uint8)
 img[:cols] = img_orig
-img[cols:,:] = img_dbg
+img[cols:cols*2] = img_dbg
+img[cols*2:-cols] = cv2.cvtColor(255-mask_and, cv2.COLOR_GRAY2BGR)
+img[-cols:] = cv2.cvtColor(closed, cv2.COLOR_GRAY2BGR)
 cv2.imshow('norm2', img)
 key = cv2.waitKey(0)
 sys.exit(1 if key == 27 else 0)
