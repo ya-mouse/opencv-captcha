@@ -38,6 +38,12 @@ class Preprocessor:
             _,img = cv2.threshold(img, minv, 255, cv2.THRESH_TOZERO)
         if _ is not None:
             cv2.normalize(img, img, 0, 255, cv2.NORM_MINMAX)
+        if gamma != 1.0:
+            lut = np.array([i / 255.0 for i in xrange(256)])
+            igamma = 1.0 / gamma
+            lut = cv2.pow(lut, igamma) * 255.0
+            abs64f = np.absolute(cv2.LUT(img, lut))
+            img = np.uint8(abs64f)
         return _, img
 
     def hsv_levels(self, minv, maxv, gamma=1.0, img=None, level=2):
@@ -67,12 +73,14 @@ class Preprocessor:
     def blur(self, block=(5,5)):
         self._img = self._blur(self._img, block)
 
-    def hsv_threshold(self):
-        img_hsv = cv2.cvtColor(self._img, cv2.COLOR_BGR2HSV)
+    def hsv_threshold(self, img=None):
+        if img is None:
+            img = self._img
+        img_hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         hsv_h = img_hsv[:,:,0]
         hsv_s = img_hsv[:,:,1]
         hsv_v = img_hsv[:,:,2]
-#        cv2.imshow('th_img', self._img)
+#        cv2.imshow('th_img', img)
 #        cv2.imshow('th_h', hsv_h)
 #        cv2.imshow('th_s', hsv_s)
 #        cv2.imshow('th_v', hsv_v)
@@ -226,6 +234,16 @@ pre.reset()
 #pre.scale(2.0, cv2.INTER_NEAREST)
 pre.scale(2.0, cv2.INTER_CUBIC)
 pre.rotate(skew)
+_, lev = pre.levels(106, 122, 8.58)
+th = pre.hsv_threshold(lev)
+kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 3))
+closed = cv2.morphologyEx(th, cv2.MORPH_CLOSE, kernel)
+th = pre.threshold(pre.gray(pre.hsv_levels(0, 172, 0.21, level=2)))
+closed = cv2.morphologyEx(th, cv2.MORPH_OPEN, kernel)
+
+kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 8))
+closed = cv2.morphologyEx(closed, cv2.MORPH_CLOSE, kernel)
+#cv2.imshow('closed', closed)
 #pre.scale(2.0, cv2.INTER_NEAREST)
 #pre.scale(0.5, cv2.INTER_CUBIC)
 gray = pre.hsv_threshold()
@@ -252,7 +270,8 @@ l4 = cv2.cvtColor(pre.hsv_levels(25, 200, level=1), cv2.COLOR_BGR2HSV)[:,:,1]
 kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 4))
 l33 = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
 
-cv2.imshow('img', gray)
+mask_and = cv2.bitwise_and(255-gray, 255-gray, mask=closed)
+cv2.imshow('255-mask_and', 255-mask_and)
 
 def mask_by_hsv(pre, gray=None):
     if gray is None:
@@ -260,8 +279,8 @@ def mask_by_hsv(pre, gray=None):
     gray = 255 - gray
     gray[:,:110] = 0
     gray[:,-110:] = 0
-    gray[:25] = 0
-    gray[-25:] = 0
+    gray[:35] = 0
+    gray[-35:] = 0
 
     masked = cv2.bitwise_and(pre.img, pre.img, mask=gray)
     mean = cv2.mean(pre.img, mask=gray)
@@ -269,6 +288,7 @@ def mask_by_hsv(pre, gray=None):
     color = np.uint8([[mean[:3]]])
     hsv_color = cv2.cvtColor(color, cv2.COLOR_BGR2HSV)
     h = hsv_color[0][0][0]
+    print(hsv_color)
     color_lo = np.array([h-10, 100, 100])
     color_up = np.array([h+10, 255, 255])
 
@@ -277,19 +297,20 @@ def mask_by_hsv(pre, gray=None):
 
     return masked
 
-cv2.imshow('im3', mask_by_hsv(pre, gray))
-cv2.waitKey(0)
-sys.exit(0)
+#cv2.imshow('aaaa', closed)
+#cv2.imshow('dff', cv2.bitwise_and(pre.img, pre.img, mask=mask_and))
+#cv2.imshow('im3', mask_by_hsv(pre, closed))
 
-cv2.imshow('l3', l3)
-cv2.imshow('l4', l4)
+#cv2.imshow('l3', l3)
+#cv2.imshow('l4', l4)
 
-contours,_ = cv2.findContours(l33.copy(), cv2.RETR_LIST, 4)
+contours,_ = cv2.findContours((255-mask_and).copy(), cv2.RETR_LIST, 4)
 cnts = sorted(contours, key = cv2.contourArea, reverse = True)
 
 preresponses = []
 
-img_scale = pre.img
+img_scale = cv2.bitwise_and(pre.img, pre.img, mask=mask_and)
+img_orig = pre.img.copy()
 img_dbg = img_scale.copy()
 
 cols,rows,_ = img_scale.shape
@@ -299,11 +320,11 @@ maxy = 0
 for cnt in cnts:
     peri = cv2.arcLength(cnt, True)
     approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-    print(cv2.contourArea(cnt))
+#    print(cv2.contourArea(cnt))
     area = cv2.contourArea(cnt)
     if area > 50 and area < 2500:
         [x,y,w,h] = cv2.boundingRect(cnt)
-        print('{},{} {}x{}'.format(x,y,w,h))
+#        print('{},{} {}x{}'.format(x,y,w,h))
 
 #        cv2.drawContours(img_rgb, [approx], -1, (0, 255, 0), 3)
 #        cv2.imshow('norm',img_rgb)
@@ -328,9 +349,6 @@ for cnt in cnts:
 #                sample = roismall.reshape((1,100))
 #                samples = np.append(samples,sample,0)
 
-cv2.imshow('norm', img_dbg)
-key = cv2.waitKey(0)
-
 def cut(img, rect):
     mask = np.zeros(img.shape[:2],np.uint8)
 
@@ -346,6 +364,8 @@ def cut(img, rect):
 miny -= 2
 responses = []
 for r in preresponses:
+    cv2.rectangle(img_dbg,(r[0],miny),(r[0]+r[2],maxy),(255,0,0),2)
+    continue
     p = Preprocessor(r[3])
     im = r[3]
     p.blur()
@@ -353,11 +373,11 @@ for r in preresponses:
     key = cv2.waitKey(0)
 #    im = pre_levels(im, 0, 170)
 #    im = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
-    p.threshold(im)
+    th = p.threshold()
 #    kernel = np.ones((2,2), np.uint8)
 #    im = cv2.erode(im, kernel, iterations=3)
 
-    contours,_ = cv2.findContours(p.img.copy(), cv2.RETR_LIST, 4)
+    contours,_ = cv2.findContours(th.copy(), cv2.RETR_LIST, 4)
     cnts = sorted(contours, key = cv2.contourArea, reverse = True)
     found = False
     for cnt in cnts:
@@ -397,8 +417,16 @@ for r in preresponses:
 #    cv2.imshow('norm', im)
 #    key = cv2.waitKey(0)
 
+img = np.ndarray((cols*2,rows,3), dtype=np.uint8)
+img[:cols] = img_orig
+img[cols:,:] = img_dbg
+cv2.imshow('norm2', img)
+key = cv2.waitKey(0)
+sys.exit(1 if key == 27 else 0)
+
 cv2.imshow('norm', img_dbg)
 key = cv2.waitKey(0)
+sys.exit(0)
 
 roi_mask = img_mask[10:-10,10:-10]
 roi_rgb2 = img_rgb2[10:-10,10:-10]
