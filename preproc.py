@@ -49,9 +49,9 @@ class Preprocessor:
         s = img_hsv[:,:,1]
         v = img_hsv[:,:,2]
         lev = img_hsv[:,:,level]
-        cv2.imshow('lev_h', h)
-        cv2.imshow('lev_s', s)
-        cv2.imshow('lev_v', v)
+#        cv2.imshow('lev_h', h)
+#        cv2.imshow('lev_s', s)
+#        cv2.imshow('lev_v', v)
 #        cv2.waitKey(0)
 
         _, lev = self.levels(minv, maxv, gamma, lev)
@@ -71,10 +71,10 @@ class Preprocessor:
         hsv_h = img_hsv[:,:,0]
         hsv_s = img_hsv[:,:,1]
         hsv_v = img_hsv[:,:,2]
-        cv2.imshow('th_img', self._img)
-        cv2.imshow('th_h', hsv_h)
-        cv2.imshow('th_s', hsv_s)
-        cv2.imshow('th_v', hsv_v)
+#        cv2.imshow('th_img', self._img)
+#        cv2.imshow('th_h', hsv_h)
+#        cv2.imshow('th_s', hsv_s)
+#        cv2.imshow('th_v', hsv_v)
         ret,otsu = cv2.threshold(hsv_s,0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         return otsu
 
@@ -84,10 +84,14 @@ class Preprocessor:
         ret, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         return otsu
 
+    i = 0
+
     @staticmethod
     def whiteness(roi):
         r = ((np.array([0,0,0]), np.array([80,80,80])))
         black = cv2.inRange(roi, r[0], r[1])
+#        cv2.imshow('im{}'.format(Preprocessor.i), roi)
+        Preprocessor.i += 1
         black_inv = cv2.bitwise_not(black)
 
         white = np.zeros((len(roi), len(roi[0]), 3), np.uint8)
@@ -107,6 +111,13 @@ class Preprocessor:
             img = self._img
         return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
+    def isblack(self, border=10, limit=150.0):
+        # TODO: Caclulate 10%
+        mean_top = np.average(cv2.mean(self._img[:border])) < limit
+        mean_bot = np.average(cv2.mean(self._img[-border:])) < limit
+        self._isblack = mean_top and mean_bot
+        return self._isblack
+
     def skew(self, minv, maxv, gamma=1.0):
         #self._img = self.bgr(self.hsv_threshold())
         lev = self.hsv_levels(minv, maxv, gamma)
@@ -114,9 +125,18 @@ class Preprocessor:
 #        cv2.imshow('skew_lev', lev)
         mask = cv2.inRange(gray, 240, 255)
 
+        # Расширяем границы картинки для лучшего определения границ
+        cols, rows, _ = lev.shape
+        gray_ext = np.zeros((cols+10, rows+10), np.uint8)
+        if not self.isblack():
+            gray_ext = 255-gray_ext
+        gray_ext[5:-5,5:-5] = gray
+
+        mask_ext = cv2.inRange(gray_ext, 240, 255)
+
         rect = None
-        for m in (gray, 255-mask):
-            n = cv2.moments(m)
+        for m in (gray_ext, 255-mask_ext):
+            #n = cv2.moments(m)
             #print(n['mu11']/n['mu02'])
             contours,_ = cv2.findContours(m, cv2.RETR_EXTERNAL, 2)
             if not contours:
@@ -132,8 +152,9 @@ class Preprocessor:
         if rect is None or rect[2] == 0:
             return None
         if abs(rect[2]) > 7:
+            print('Rect', rect[2])
             return None
-        return rect
+        return ((rect[0][0]-5.0, rect[0][1]-5.0), rect[1], rect[2])
 
     def rotate(self, rect, border=20, fill=(255,255,255)):
         if not rect:
@@ -221,8 +242,12 @@ l4 = cv2.cvtColor(pre.hsv_levels(25, 200, level=1), cv2.COLOR_BGR2HSV)[:,:,1]
 kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 9))
 l33 = cv2.morphologyEx(l4, cv2.MORPH_CLOSE, kernel)
 
-cv2.imshow('l3', l33)
+cv2.imshow('img', pre.img)
 cv2.waitKey(0)
+sys.exit(0)
+
+cv2.imshow('l3', l3)
+cv2.imshow('l4', l4)
 
 contours,_ = cv2.findContours(l33.copy(), cv2.RETR_LIST, 4)
 cnts = sorted(contours, key = cv2.contourArea, reverse = True)
