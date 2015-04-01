@@ -258,6 +258,10 @@ def mask_by_hsv(pre, gray=None):
     if gray is None:
         gray = pre.hsv_threshold()
     gray = 255 - gray
+    gray[:,:110] = 0
+    gray[:,-110:] = 0
+    gray[:25] = 0
+    gray[-25:] = 0
 
     masked = cv2.bitwise_and(pre.img, pre.img, mask=gray)
     mean = cv2.mean(pre.img, mask=gray)
