@@ -112,9 +112,15 @@ class Preprocessor:
             img = self._img
         return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
+    def hsv(self, img=None):
+        if img is None:
+            img = self._img
+        return cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
     def isblack(self, border=10, limit=150.0):
         if self._isblack is None:
             # TODO: Caclulate 10%
+            # cv2.mean(img, mask=mask)
             mean_top = np.average(cv2.mean(self._img[:border])) < limit
             mean_bot = np.average(cv2.mean(self._img[-border:])) < limit
             self._isblack = mean_top and mean_bot
@@ -220,6 +226,8 @@ pre.reset()
 #pre.scale(2.0, cv2.INTER_NEAREST)
 pre.scale(2.0, cv2.INTER_CUBIC)
 pre.rotate(skew)
+#pre.scale(2.0, cv2.INTER_NEAREST)
+#pre.scale(0.5, cv2.INTER_CUBIC)
 gray = pre.hsv_threshold()
 
 #ret,img_mask = cv2.threshold(cv2.cvtColor(img_rgb2, cv2.COLOR_BGR2GRAY),0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -241,12 +249,32 @@ kernel = cv2.getStructuringElement(cv2.MORPH_CROSS, (1, 1))
 l3 = cv2.cvtColor(pre.hsv_levels(170, 255, level=1), cv2.COLOR_BGR2HSV)[:,:,1]
 l4 = cv2.cvtColor(pre.hsv_levels(25, 200, level=1), cv2.COLOR_BGR2HSV)[:,:,1]
 
-kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 9))
-l33 = cv2.morphologyEx(l4, cv2.MORPH_CLOSE, kernel)
+kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 4))
+l33 = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
 
-#cv2.imshow('img', pre.img)
-#cv2.waitKey(0)
-print(pre.isblack())
+cv2.imshow('img', gray)
+
+def mask_by_hsv(pre, gray=None):
+    if gray is None:
+        gray = pre.hsv_threshold()
+    gray = 255 - gray
+
+    masked = cv2.bitwise_and(pre.img, pre.img, mask=gray)
+    mean = cv2.mean(pre.img, mask=gray)
+
+    color = np.uint8([[mean[:3]]])
+    hsv_color = cv2.cvtColor(color, cv2.COLOR_BGR2HSV)
+    h = hsv_color[0][0][0]
+    color_lo = np.array([h-10, 100, 100])
+    color_up = np.array([h+10, 255, 255])
+
+    hsv_img = cv2.inRange(pre.hsv(), color_lo, color_up)
+    masked = cv2.bitwise_and(pre.img, pre.img, mask=hsv_img)
+
+    return masked
+
+cv2.imshow('im3', mask_by_hsv(pre, gray))
+cv2.waitKey(0)
 sys.exit(0)
 
 cv2.imshow('l3', l3)
