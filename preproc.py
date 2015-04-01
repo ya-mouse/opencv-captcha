@@ -10,15 +10,24 @@ def pre_levels(image, minv, maxv, gamma=1.0):
     img_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
     # Get Value channel
-    v = img_hsv[:,:,2]
+    v2 = img_hsv[:,:,2]
+    h = img_hsv[:,:,0]
+    s = img_hsv[:,:,1]
+    cv2.imshow('h', h)
+    cv2.imshow('s', s)
+    cv2.imshow('v', v2)
+#    cv2.waitKey(0)
 
     interval = maxv - minv
 
-    _,v2 = cv2.threshold(v, maxv, 255, cv2.THRESH_TRUNC)
-    _,v2 = cv2.threshold(v2, minv, 255, cv2.THRESH_TOZERO)
-    cv2.normalize(v2, v2, 0, 255, cv2.NORM_MINMAX)
-
-    img_hsv[:,:,2] = v2
+    _ = None
+    if maxv < 255:
+        _,v2 = cv2.threshold(v2, maxv, 255, cv2.THRESH_TRUNC)
+    if minv > 0:
+        _,v2 = cv2.threshold(v2, minv, 255, cv2.THRESH_TOZERO)
+    if _ is not None:
+        cv2.normalize(v2, v2, 0, 255, cv2.NORM_MINMAX)
+        img_hsv[:,:,2] = v2
     return cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR)
 
 def pre_blur(image):
@@ -27,7 +36,16 @@ def pre_blur(image):
     return (blur, img_gray)
 
 def pre_threshold(image):
-    ret,img_thr = cv2.threshold(image,0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+#    img_hsv = cv2.cvtColor(cv2.cvtColor(image, cv2.COLOR_GRAY2BGR), cv2.COLOR_BGR2HSV)
+    img_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    hsv_h = img_hsv[:,:,0]
+    hsv_s = img_hsv[:,:,1]
+    hsv_v = img_hsv[:,:,2]
+    cv2.imshow('v1', image)
+    cv2.imshow('th_h', hsv_h)
+    cv2.imshow('th_s', hsv_s)
+    cv2.imshow('th_v', hsv_v)
+    ret,img_thr = cv2.threshold(hsv_s,0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     return img_thr
 
 def pre_deskew2(img):
@@ -98,10 +116,10 @@ def pre_deskew(img_rgb, img_gray, img_scale, border):
         #img_lev = pre_levels(img_scale, 200, 255)
 #        img_lev = pre_levels(img_scale, 0, 170)
 
-        img_scale[:border]    = pre_whiteness(img_scale[:border])
-        img_scale[-border:]   = pre_whiteness(img_scale[-border:])
-        img_scale[:,-border:] = pre_whiteness(img_scale[:,-border:])
-        img_scale[:,:border]  = pre_whiteness(img_scale[:,:border])
+#        img_scale[:border]    = pre_whiteness(img_scale[:border])
+#        img_scale[-border:]   = pre_whiteness(img_scale[-border:])
+#        img_scale[:,-border:] = pre_whiteness(img_scale[:,-border:])
+#        img_scale[:,:border]  = pre_whiteness(img_scale[:,:border])
 
     return img_rgb, img_scale
 
@@ -143,15 +161,22 @@ img_rgb = cv2.imread(sys.argv[1])
 img_scale = cv2.resize(img_rgb, (0, 0), fx=2.0, fy=2.0)
 cols,rows,_ = img_scale.shape
 
-#img_lev = pre_levels(img_scale, 200, 255)
-#img_lev = pre_levels(img_scale, 0, 170)
+##img_lev = pre_levels(img_scale, 200, 255)
+##img_lev = pre_levels(img_scale, 0, 170)
 img_lev = pre_levels(img_scale, 200, 255)
-#cv2.imshow('s', img_lev)
+img_th = cv2.resize(pre_threshold(img_rgb), (0,0), fx=2.0, fy=2.0, interpolation=cv2.INTER_NEAREST) #cv2.cvtColor(img_scale, cv2.COLOR_BGR2GRAY))
+cv2.imshow('s', img_th)
+img_lev = pre_levels(cv2.cvtColor(img_th, cv2.COLOR_GRAY2BGR), 20, 100)
+cv2.imshow('l', img_lev)
+#img_lev = img_scale
 
-_,img_gray = pre_blur(img_lev)
+#_,img_gray = pre_blur(img_lev)
+img_gray = cv2.cvtColor(img_lev, cv2.COLOR_BGR2GRAY)
 
-img_rgb, img_scale = pre_deskew(img_rgb, img_gray, img_scale, 20)
+img_rgb, img_scale = pre_deskew(img_rgb, img_gray, img_gray, 20)
+cv2.imshow('sc', img_scale)
 
+cv2.waitKey(0)
 #img_rgb2 = img_rgb
 img_rgb2 = cv2.bilateralFilter(img_rgb,9,200,10)
 img_rgb2 = cv2.resize(img_rgb2, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_NEAREST)
@@ -161,7 +186,8 @@ img_rgb2 = cv2.resize(img_rgb2, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_
 img_rgb3 = img_rgb2.copy()
 
 #img_rgb2 = pre_levels(img_rgb2, 150, 255)
-ret,img_mask = cv2.threshold(pre_blur(img_rgb2)[1],0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+ret,img_mask = cv2.threshold(cv2.cvtColor(img_rgb2, cv2.COLOR_BGR2GRAY),0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+#ret,img_mask = cv2.threshold(pre_blur(img_rgb2)[1],0,255,cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 edges2 = cv2.Canny(cv2.cvtColor(cv2.resize(img_rgb2, (0, 0), fx=1.0, fy=1.0, interpolation=cv2.INTER_NEAREST), cv2.COLOR_BGR2GRAY),50,150,apertureSize = 3)
 #edges2 = cv2.Canny(cv2.cvtColor(img_rgb2, cv2.COLOR_BGR2GRAY),50,150,apertureSize = 3)
 #img_mask = cv2.adaptiveThreshold(cv2.cvtColor(img_rgb2, cv2.COLOR_BGR2GRAY),255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
@@ -177,6 +203,9 @@ img_lev = pre_levels(img_rgb3, 150, 255)
 _,img_gray = pre_blur(img_lev)
 
 img_thr = pre_threshold(img_gray)
+
+#cv2.imshow('v', img_thr)
+#cv2.waitKey(0)
 
 #wat = water(img_scale, img_thr)
 
@@ -226,8 +255,19 @@ for cnt in cnts:
 #                sample = roismall.reshape((1,100))
 #                samples = np.append(samples,sample,0)
 
+def cut(img, rect):
+    mask = np.zeros(img.shape[:2],np.uint8)
+
+    bgdModel = np.zeros((1,65),np.float64)
+    fgdModel = np.zeros((1,65),np.float64)
+
+    cv2.grabCut(img,mask,rect,bgdModel,fgdModel,5,cv2.GC_INIT_WITH_RECT)
+
+    mask2 = np.where((mask==2)|(mask==0),0,1).astype('uint8')
+    img = img*mask2[:,:,np.newaxis]
+    return img
+
 miny -= 2
-key = cv2.waitKey(0)
 responses = []
 for r in preresponses:
     im = r[3]
@@ -262,12 +302,19 @@ for r in preresponses:
                 cv2.rectangle(img_dbg,(x,miny),(x+w,maxy),(0,255,0),2)
                 roi = img_scale[miny:maxy,x:x+w]
                 responses.append([x, miny, w, roi, '_'])
+#                rsp = responses[-1]
+#                cv2.imshow('norm', cut(img_scale.copy(), (rsp[0]-15, miny-10, rsp[2]+30, maxy-miny+20)))
+#                key = cv2.waitKey(0)
                 found = True
     if not found:
         cv2.rectangle(img_dbg,(r[0],miny),(r[0]+r[2],maxy),(255,0,0),2)
         roi = img_scale[miny:maxy,r[0]:r[0]+r[2]]
         responses.append([r[0], miny, r[2], roi, '_'])
 
+#        rsp = responses[-1]
+#        cv2.imshow('norm', cut(img_scale.copy(), (rsp[0]-10, miny-10, rsp[2]+20, maxy-miny+20)))
+#        key = cv2.waitKey(0)
+#    cv2.imshow('norm', img_scale[(miny-5):(maxy+5),(rsp[0]-5):(rsp[0]+rsp[2]+5)])
 #    cv2.imshow('norm', im)
 #    key = cv2.waitKey(0)
 
@@ -345,11 +392,13 @@ closed4 = cv2.morphologyEx(edges2, cv2.MORPH_CLOSE, kernel)
 #closed4 = cv2.erode(roi4, kernel, iterations=5)
 
 #cv2.imshow('n1', edges2)
-#cv2.imshow('img', roi_and)
+#th = pre_threshold(cv2.cvtColor(pre_levels(roi_and, 0, 160), cv2.COLOR_BGR2GRAY))
+#edges2 = cv2.Canny(th,50,150,apertureSize = 3)
+cv2.imshow('nnn', img_thr)
 
-cv2.imshow('norm1', edges) #cv2.resize(cv2.resize(img_rgb2, (0, 0), fx=0.5, fy=0.5), (0,0), fx=8.0, fy=8.0))
-cv2.imshow('norm', cv2.resize(roi_and, (0, 0), fx=2.0, fy=2.0)) #, cv2.COLOR_BGR2GRAY)))
-cv2.imshow('norm2', img_dbg) # thinning(cv2.resize(closed, (0, 0), fx=4.0, fy=4.0))) #, cv2.COLOR_BGR2GRAY)))
+#cv2.imshow('norm1', edges) #cv2.resize(cv2.resize(img_rgb2, (0, 0), fx=0.5, fy=0.5), (0,0), fx=8.0, fy=8.0))
+#cv2.imshow('norm', cv2.resize(img, (0, 0), fx=2.0, fy=2.0)) #, cv2.COLOR_BGR2GRAY)))
+#cv2.imshow('norm2', img_dbg) # thinning(cv2.resize(closed, (0, 0), fx=4.0, fy=4.0))) #, cv2.COLOR_BGR2GRAY)))
 #cv2.imshow('n1', wat[0])
 #cv2.imshow('n2', wat[1])
 #cv2.imshow('n3', wat[2])
