@@ -10,6 +10,7 @@ class Preprocessor:
     def __init__(self, image):
         self._orig = image
         self._img = image.copy()
+        self._isblack = None
 
     @property
     def img(self):
@@ -112,10 +113,11 @@ class Preprocessor:
         return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
     def isblack(self, border=10, limit=150.0):
-        # TODO: Caclulate 10%
-        mean_top = np.average(cv2.mean(self._img[:border])) < limit
-        mean_bot = np.average(cv2.mean(self._img[-border:])) < limit
-        self._isblack = mean_top and mean_bot
+        if self._isblack is None:
+            # TODO: Caclulate 10%
+            mean_top = np.average(cv2.mean(self._img[:border])) < limit
+            mean_bot = np.average(cv2.mean(self._img[-border:])) < limit
+            self._isblack = mean_top and mean_bot
         return self._isblack
 
     def skew(self, minv, maxv, gamma=1.0):
@@ -242,8 +244,9 @@ l4 = cv2.cvtColor(pre.hsv_levels(25, 200, level=1), cv2.COLOR_BGR2HSV)[:,:,1]
 kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 9))
 l33 = cv2.morphologyEx(l4, cv2.MORPH_CLOSE, kernel)
 
-cv2.imshow('img', pre.img)
-cv2.waitKey(0)
+#cv2.imshow('img', pre.img)
+#cv2.waitKey(0)
+print(pre.isblack())
 sys.exit(0)
 
 cv2.imshow('l3', l3)
