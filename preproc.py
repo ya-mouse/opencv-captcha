@@ -341,13 +341,12 @@ def cut(img, rect):
     img = img*mask2[:,:,np.newaxis]
     return img
 
-def detect_contours(pre, mask, closed):
+def detect_contours(img_scale, mask):
     _,contours,_ = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, 4)
     cnts = sorted(contours, key = cv2.contourArea, reverse = True)
 
     preresponses = []
 
-    img_scale = cv2.bitwise_and(pre.img, pre.img, mask=closed) #mask)
     img_dbg = img_scale.copy()
 
     cols,rows,_ = img_scale.shape
@@ -444,7 +443,10 @@ def detect_contours(pre, mask, closed):
 #        key = cv2.waitKey(0)
     return img_dbg
 
-img_dbg = detect_contours(pre, mask_and, closed)
+img_scale = cv2.bitwise_and(pre.img, pre.img, mask=closed)
+
+img_dbg = detect_contours(img_scale, mask_and)
+#img_dbg = detect_contours(img_scale, closed)
 
 cols,rows,_ = img_dbg.shape
 
