@@ -306,12 +306,36 @@ def mask_by_hsv(pre, gray=None):
 #cv2.imshow('l3', l3)
 #cv2.imshow('l4', l4)
 
-contours,_ = cv2.findContours((255-mask_and).copy(), cv2.RETR_LIST, 4)
+contours,_ = cv2.findContours(mask_and.copy(), cv2.RETR_EXTERNAL, 4)
 cnts = sorted(contours, key = cv2.contourArea, reverse = True)
+
+def cut_bg(img, cnts):
+    minx = img.shape[1]
+    maxy = img.shape[0]
+    maxx = 0
+    for cnt in cnts:
+        area = cv2.contourArea(cnt)
+        if area > 50 and area < 2500:
+            [x,y,w,h] = cv2.boundingRect(cnt)
+            minx = min(minx, x)
+            maxx = max(maxx, x+w)
+
+    mask_bg = np.zeros(img.shape[:2],np.uint8)
+
+    bgdModel = np.zeros((1,65),np.float64)
+    fgdModel = np.zeros((1,65),np.float64)
+
+    rect = (minx-5,15,maxx+5,maxy-15)
+    print(rect)
+    cv2.grabCut(img,mask_bg,rect,bgdModel,fgdModel,5,cv2.GC_INIT_WITH_RECT)
+
+    mask2 = np.where((mask_bg==2)|(mask_bg==0),0,1).astype('uint8')
+    cv2.rectangle(img,rect[:2],rect[2:],(0,0,255),2)
+    return img*mask2[:,:,np.newaxis]
 
 preresponses = []
 
-img_scale = cv2.bitwise_and(pre.img, pre.img, mask=mask_and)
+img_scale = cv2.bitwise_and(pre.img, pre.img, mask=closed) #mask_and)
 img_dbg = img_scale.copy()
 
 cols,rows,_ = img_scale.shape
@@ -323,11 +347,11 @@ for cnt in cnts:
     approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
 #    print(cv2.contourArea(cnt))
     area = cv2.contourArea(cnt)
-    if area > 50 and area < 2500:
+    if area > 50: # and area < 2500:
         [x,y,w,h] = cv2.boundingRect(cnt)
 #        print('{},{} {}x{}'.format(x,y,w,h))
 
-#        cv2.drawContours(img_rgb, [approx], -1, (0, 255, 0), 3)
+#        cv2.drawContours(img_dbg, [approx], -1, (0, 255, 0), 1)
 #        cv2.imshow('norm',img_rgb)
 #        key = cv2.waitKey(0)
         if h > 25 and x > 20:
