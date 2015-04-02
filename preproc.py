@@ -305,9 +305,6 @@ def mask_by_hsv(pre, gray=None):
 #cv2.imshow('l3', l3)
 #cv2.imshow('l4', l4)
 
-_,contours,_ = cv2.findContours(mask_and.copy(), cv2.RETR_EXTERNAL, 4)
-cnts = sorted(contours, key = cv2.contourArea, reverse = True)
-
 def cut_bg(img, cnts):
     minx = img.shape[1]
     maxy = img.shape[0]
@@ -332,47 +329,6 @@ def cut_bg(img, cnts):
     cv2.rectangle(img,rect[:2],rect[2:],(0,0,255),2)
     return img*mask2[:,:,np.newaxis]
 
-preresponses = []
-
-img_scale = cv2.bitwise_and(pre.img, pre.img, mask=closed) #mask_and)
-img_dbg = img_scale.copy()
-
-cols,rows,_ = img_scale.shape
-
-miny = rows
-maxy = 0
-for cnt in cnts:
-    peri = cv2.arcLength(cnt, True)
-    approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-    area = cv2.contourArea(cnt)
-#    print('A', area)
-    if area > 20: # and area < 2500:
-        [x,y,w,h] = cv2.boundingRect(cnt)
-#        print('{},{} {}x{}'.format(x,y,w,h))
-
-#        cv2.drawContours(img_dbg, [approx], -1, (0, 255, 0), 1)
-#        cv2.imshow('norm',img_rgb)
-#        key = cv2.waitKey(0)
-        if x > 20: #h > 25 and x > 20:
-            cv2.rectangle(img_dbg,(x,y),(x+w,y+h),(0,0,255),2)
-            roi = img_scale[y:y+h,x:x+w]
-#            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4))
-#            roi = cv2.morphologyEx(roi, cv2.MORPH_CLOSE, kernel)
-#            roi = cv2.erode(roi, None, iterations = 2)
-#            roismall = cv2.resize(roi,(10,10))
-#            cv2.imshow('norm3',img_dbg)
-#            key = cv2.waitKey(0)
-
-#            if key == 27:  # (escape to quit)
-#                sys.exit()
-            preresponses.append([x, y, w, roi, '_'])
-            maxy = max(maxy, y+h)
-            miny = min(miny, y)
-#            elif key in keys:
-#                responses.append(int(chr(key)))
-#                sample = roismall.reshape((1,100))
-#                samples = np.append(samples,sample,0)
-
 def cut(img, rect):
     mask = np.zeros(img.shape[:2],np.uint8)
 
@@ -385,62 +341,112 @@ def cut(img, rect):
     img = img*mask2[:,:,np.newaxis]
     return img
 
-miny -= 2
-responses = []
-for r in preresponses:
-    continue
-#    cv2.rectangle(img_dbg,(r[0],miny),(r[0]+r[2],maxy),(255,0,0),2)
-#    continue
-    p = Preprocessor(r[3])
-    im = r[3]
-    p.blur()
-#    cv2.imshow('norm', p.img)
-#    key = cv2.waitKey(0)
-#    im = pre_levels(im, 0, 170)
-#    im = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
-    th = p.threshold()
-#    kernel = np.ones((2,2), np.uint8)
-#    im = cv2.erode(im, kernel, iterations=3)
-
-    _,contours,_ = cv2.findContours(th.copy(), cv2.RETR_LIST, 4)
+def detect_contours(pre, mask, closed):
+    _,contours,_ = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, 4)
     cnts = sorted(contours, key = cv2.contourArea, reverse = True)
-    found = False
+
+    preresponses = []
+
+    img_scale = cv2.bitwise_and(pre.img, pre.img, mask=closed) #mask)
+    img_dbg = img_scale.copy()
+
+    cols,rows,_ = img_scale.shape
+
+    miny = rows
+    maxy = 0
     for cnt in cnts:
         peri = cv2.arcLength(cnt, True)
         approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-#        print(cv2.contourArea(cnt))
         area = cv2.contourArea(cnt)
-        if area > 60 and area < 2500:
+#        print('A', area)
+        if area > 20: # and area < 2500:
             [x,y,w,h] = cv2.boundingRect(cnt)
-            w0 = w
-            if h>25:
-                if x < 8:
-                    w += x
-                    x = 0
-                if w + w*0.05 >= r[2]:
-                    w = r[2]
-                x += r[0]
-#                roi = img_dbg[r[1]:(r[1]+y+h),r[0]:(r[0]+x+w0)]
-#                cv2.drawContours(roi, [approx], -1, (0, 255, 0), 2)
-#                img_dbg[r[1]:(r[1]+y+h),r[0]:(r[0]+x+w0)] = roi
-                cv2.rectangle(img_dbg,(x,miny),(x+w,maxy),(0,255,0),2)
-                roi = img_scale[miny:maxy,x:x+w]
-                responses.append([x, miny, w, roi, '_'])
-#                rsp = responses[-1]
-#                cv2.imshow('norm', cut(img_scale.copy(), (rsp[0]-15, miny-10, rsp[2]+30, maxy-miny+20)))
-#                key = cv2.waitKey(0)
-                found = True
-    if not found:
-        cv2.rectangle(img_dbg,(r[0],miny),(r[0]+r[2],maxy),(255,0,0),2)
-        roi = img_scale[miny:maxy,r[0]:r[0]+r[2]]
-        responses.append([r[0], miny, r[2], roi, '_'])
+#            print('{},{} {}x{}'.format(x,y,w,h))
 
-#        rsp = responses[-1]
-#        cv2.imshow('norm', cut(img_scale.copy(), (rsp[0]-10, miny-10, rsp[2]+20, maxy-miny+20)))
+#            cv2.drawContours(img_dbg, [approx], -1, (0, 255, 0), 1)
+#            cv2.imshow('norm',img_rgb)
+#            key = cv2.waitKey(0)
+            if x > 20: #h > 25 and x > 20:
+                cv2.rectangle(img_dbg,(x,y),(x+w,y+h),(0,0,255),2)
+                roi = img_scale[y:y+h,x:x+w]
+#                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4))
+#                roi = cv2.morphologyEx(roi, cv2.MORPH_CLOSE, kernel)
+#                roi = cv2.erode(roi, None, iterations = 2)
+#                roismall = cv2.resize(roi,(10,10))
+#                cv2.imshow('norm3',img_dbg)
+#                key = cv2.waitKey(0)
+
+#                if key == 27:  # (escape to quit)
+#                    sys.exit()
+                preresponses.append([x, y, w, roi, '_'])
+                maxy = max(maxy, y+h)
+                miny = min(miny, y)
+#                elif key in keys:
+#                    responses.append(int(chr(key)))
+#                    sample = roismall.reshape((1,100))
+#                    samples = np.append(samples,sample,0)
+
+    miny -= 2
+    responses = []
+    for r in preresponses:
+        continue
+#        cv2.rectangle(img_dbg,(r[0],miny),(r[0]+r[2],maxy),(255,0,0),2)
+#        continue
+        p = Preprocessor(r[3])
+        im = r[3]
+        p.blur()
+#        cv2.imshow('norm', p.img)
 #        key = cv2.waitKey(0)
-#    cv2.imshow('norm', img_scale[(miny-5):(maxy+5),(rsp[0]-5):(rsp[0]+rsp[2]+5)])
-#    cv2.imshow('norm', im)
-#    key = cv2.waitKey(0)
+#        im = pre_levels(im, 0, 170)
+#        im = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
+        th = p.threshold()
+#        kernel = np.ones((2,2), np.uint8)
+#        im = cv2.erode(im, kernel, iterations=3)
+
+        _,contours,_ = cv2.findContours(th.copy(), cv2.RETR_LIST, 4)
+        cnts = sorted(contours, key = cv2.contourArea, reverse = True)
+        found = False
+        for cnt in cnts:
+            peri = cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+#            print(cv2.contourArea(cnt))
+            area = cv2.contourArea(cnt)
+            if area > 60 and area < 2500:
+                [x,y,w,h] = cv2.boundingRect(cnt)
+                w0 = w
+                if h>25:
+                    if x < 8:
+                        w += x
+                    x = 0
+                    if w + w*0.05 >= r[2]:
+                        w = r[2]
+                    x += r[0]
+#                    roi = img_dbg[r[1]:(r[1]+y+h),r[0]:(r[0]+x+w0)]
+#                    cv2.drawContours(roi, [approx], -1, (0, 255, 0), 2)
+#                    img_dbg[r[1]:(r[1]+y+h),r[0]:(r[0]+x+w0)] = roi
+                    cv2.rectangle(img_dbg,(x,miny),(x+w,maxy),(0,255,0),2)
+                    roi = img_scale[miny:maxy,x:x+w]
+                    responses.append([x, miny, w, roi, '_'])
+#                    rsp = responses[-1]
+#                    cv2.imshow('norm', cut(img_scale.copy(), (rsp[0]-15, miny-10, rsp[2]+30, maxy-miny+20)))
+#                    key = cv2.waitKey(0)
+                    found = True
+        if not found:
+            cv2.rectangle(img_dbg,(r[0],miny),(r[0]+r[2],maxy),(255,0,0),2)
+            roi = img_scale[miny:maxy,r[0]:r[0]+r[2]]
+            responses.append([r[0], miny, r[2], roi, '_'])
+
+#            rsp = responses[-1]
+#            cv2.imshow('norm', cut(img_scale.copy(), (rsp[0]-10, miny-10, rsp[2]+20, maxy-miny+20)))
+#            key = cv2.waitKey(0)
+#        cv2.imshow('norm', img_scale[(miny-5):(maxy+5),(rsp[0]-5):(rsp[0]+rsp[2]+5)])
+#        cv2.imshow('norm', im)
+#        key = cv2.waitKey(0)
+    return img_dbg
+
+img_dbg = detect_contours(pre, mask_and, closed)
+
+cols,rows,_ = img_dbg.shape
 
 img = np.ndarray((cols*5,rows,3), dtype=np.uint8)
 img[:cols] = img_orig
@@ -448,6 +454,8 @@ img[cols:cols*2] = img_dbg
 img[cols*2:-cols*2] = cv2.cvtColor(255-mask_and, cv2.COLOR_GRAY2BGR)
 img[-cols*2:-cols] = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 img[-cols:] = cv2.cvtColor(closed, cv2.COLOR_GRAY2BGR)
+
+
 cv2.imshow('norm2', img)
 key = cv2.waitKey(0)
 sys.exit(1 if key == 27 else 0)
