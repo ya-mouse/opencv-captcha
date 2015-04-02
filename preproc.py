@@ -154,7 +154,7 @@ class Preprocessor:
         for m in (gray_ext, 255-mask_ext):
             #n = cv2.moments(m)
             #print(n['mu11']/n['mu02'])
-            contours,_ = cv2.findContours(m, cv2.RETR_EXTERNAL, 2)
+            _,contours,_ = cv2.findContours(m, cv2.RETR_EXTERNAL, 2)
             if not contours:
                 continue
             cnt = sorted(contours, key = cv2.contourArea, reverse = True)[0]
@@ -178,9 +178,8 @@ class Preprocessor:
 
         M = cv2.getRotationMatrix2D(rect[0], rect[2], 1)
 
-        dst = cv2.cv.fromarray(self._img.copy())
-        cv2.cv.WarpAffine(cv2.cv.fromarray(self._img), dst, cv2.cv.fromarray(M), flags=cv2.INTER_LINEAR+8, fillval=fill)
-        self._img = np.asarray(dst)
+#        cv2.cv.WarpAffine(cv2.cv.fromarray(self._img), dst, cv2.cv.fromarray(M), flags=cv2.INTER_LINEAR+8, fillval=fill)
+        self._img = cv2.warpAffine(self._img, M, (self._img.shape[1], self._img.shape[0]), flags=cv2.INTER_LINEAR+8)
 
             #img_lev = pre_levels(img_scale, 200, 255)
 #            img_lev = pre_levels(img_scale, 0, 170)
@@ -306,7 +305,7 @@ def mask_by_hsv(pre, gray=None):
 #cv2.imshow('l3', l3)
 #cv2.imshow('l4', l4)
 
-contours,_ = cv2.findContours(mask_and.copy(), cv2.RETR_EXTERNAL, 4)
+_,contours,_ = cv2.findContours(mask_and.copy(), cv2.RETR_EXTERNAL, 4)
 cnts = sorted(contours, key = cv2.contourArea, reverse = True)
 
 def cut_bg(img, cnts):
@@ -345,16 +344,16 @@ maxy = 0
 for cnt in cnts:
     peri = cv2.arcLength(cnt, True)
     approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-#    print(cv2.contourArea(cnt))
     area = cv2.contourArea(cnt)
-    if area > 50: # and area < 2500:
+#    print('A', area)
+    if area > 20: # and area < 2500:
         [x,y,w,h] = cv2.boundingRect(cnt)
 #        print('{},{} {}x{}'.format(x,y,w,h))
 
 #        cv2.drawContours(img_dbg, [approx], -1, (0, 255, 0), 1)
 #        cv2.imshow('norm',img_rgb)
 #        key = cv2.waitKey(0)
-        if h > 25 and x > 20:
+        if x > 20: #h > 25 and x > 20:
             cv2.rectangle(img_dbg,(x,y),(x+w,y+h),(0,0,255),2)
             roi = img_scale[y:y+h,x:x+w]
 #            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4))
@@ -389,20 +388,21 @@ def cut(img, rect):
 miny -= 2
 responses = []
 for r in preresponses:
-    cv2.rectangle(img_dbg,(r[0],miny),(r[0]+r[2],maxy),(255,0,0),2)
     continue
+#    cv2.rectangle(img_dbg,(r[0],miny),(r[0]+r[2],maxy),(255,0,0),2)
+#    continue
     p = Preprocessor(r[3])
     im = r[3]
     p.blur()
-    cv2.imshow('norm', p.img)
-    key = cv2.waitKey(0)
+#    cv2.imshow('norm', p.img)
+#    key = cv2.waitKey(0)
 #    im = pre_levels(im, 0, 170)
 #    im = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
     th = p.threshold()
 #    kernel = np.ones((2,2), np.uint8)
 #    im = cv2.erode(im, kernel, iterations=3)
 
-    contours,_ = cv2.findContours(th.copy(), cv2.RETR_LIST, 4)
+    _,contours,_ = cv2.findContours(th.copy(), cv2.RETR_LIST, 4)
     cnts = sorted(contours, key = cv2.contourArea, reverse = True)
     found = False
     for cnt in cnts:
@@ -442,10 +442,11 @@ for r in preresponses:
 #    cv2.imshow('norm', im)
 #    key = cv2.waitKey(0)
 
-img = np.ndarray((cols*4,rows,3), dtype=np.uint8)
+img = np.ndarray((cols*5,rows,3), dtype=np.uint8)
 img[:cols] = img_orig
 img[cols:cols*2] = img_dbg
-img[cols*2:-cols] = cv2.cvtColor(255-mask_and, cv2.COLOR_GRAY2BGR)
+img[cols*2:-cols*2] = cv2.cvtColor(255-mask_and, cv2.COLOR_GRAY2BGR)
+img[-cols*2:-cols] = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 img[-cols:] = cv2.cvtColor(closed, cv2.COLOR_GRAY2BGR)
 cv2.imshow('norm2', img)
 key = cv2.waitKey(0)
