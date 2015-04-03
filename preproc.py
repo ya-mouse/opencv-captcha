@@ -1,10 +1,11 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 import cv2
 import sys
 import numpy as np
+import functools
 
-from thinning import thinning
+#from thinning import thinning
 
 class Preprocessor:
     def __init__(self, image):
@@ -39,7 +40,7 @@ class Preprocessor:
         if _ is not None:
             cv2.normalize(img, img, 0, 255, cv2.NORM_MINMAX)
         if gamma != 1.0:
-            lut = np.array([i / 255.0 for i in xrange(256)])
+            lut = np.array([i / 255.0 for i in range(256)])
             igamma = 1.0 / gamma
             lut = cv2.pow(lut, igamma) * 255.0
             abs64f = np.absolute(cv2.LUT(img, lut))
@@ -358,8 +359,8 @@ def detect_contours(img_scale, mask):
         peri = cv2.arcLength(cnt, True)
         approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
         area = cv2.contourArea(cnt)
-#        print('A', area)
-        if area > 20: # and area < 2500:
+        print('A', area)
+        if area > 15: # and area < 2500:
             [x,y,w,h] = cv2.boundingRect(cnt)
 #            print('{},{} {}x{}'.format(x,y,w,h))
 
@@ -410,8 +411,8 @@ def detect_contours(img_scale, mask):
         for cnt in contours:
             peri = cv2.arcLength(cnt, True)
             approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-#            print(cv2.contourArea(cnt))
             area = cv2.contourArea(cnt)
+#            print(cv2.contourArea(cnt))
             if area > 60 and area < 2500:
                 [x,y,w,h] = cv2.boundingRect(cnt)
                 w0 = w
@@ -453,31 +454,72 @@ def detect_contours(img_scale, mask):
         if a[0] > b[0]+b[2]:
             return 1
 
-#        r = 1 if a[0] > b[0] else -1
-#        return r
         # Пересечение по X, считаем разницу по Y
         if a[1] < b[1]:
+            a[4] = True
             return -1
+        a[4] = False
         return 1
 
-      #r = 1 if a[0] > b[0] else -1
       r = _cmp_xx(a, b)
       print(a, b, r)
       return r
 
-#    cnts = sorted(cnts, key=lambda x: x[0])
-    cnts = sorted(cnts, cmp=cmp_xx)
+    cnts = sorted(cnts, key=lambda x: x[0])
+#    cnts = sorted(cnts, key=functools.cmp_to_key(cmp_xx))
+    reduced = [[cnts[0]]]
+    t = len(cnts)-1
+    k = 0
+    i = 0
+    maxx = cnts[0][0] + cnts[0][2]
+    while i <= t:
+        cur = cnts[i]
+        if i != t:
+            nxt = cnts[i+1]
+            maxx = max(cur[0]+cur[2], maxx)
+            if nxt[0] < maxx:
+#                print(k, i, nxt[0], cur[0]+cur[2])
+                reduced[k].append(nxt)
+                i += 1
+                continue
+#            print(k, i, nxt[0])
+            maxx = nxt[0] + nxt[2]
+            reduced.append([nxt])
+        i += 1
+        k += 1
+    colors = [
+    (0,255,0),
+    (0,255,255),
+    (255,0,255),
+    (255,0,0),
+    (255,255,0),
+    (127,255,0),
+    (0,255,127),
+    (127,255,127),
+    ]
+    i = 0
+    for r in reduced:
+        print(i, r)
+        for c in r:
+#            print(c)
+            cv2.rectangle(img_dbg,(c[0],c[1]),(c[0]+c[2],c[1]+c[3]),colors[i],2)
+        cv2.imshow('norm', img_dbg)
+#        print(c[0], c[1], c[4])
+        key = cv2.waitKey(0)
+        if key == 27: sys.exit(1)
+        i += 1
     return cnts, img_dbg
 
 img_scale = cv2.bitwise_and(pre.img, pre.img, mask=mask_and) #closed)
 
 cnts, img_dbg = detect_contours(img_scale, mask_and)
-print(cnts)
-for c in cnts:
-    cv2.rectangle(img_dbg,(c[0],c[1]),(c[0]+c[2],c[1]+c[3]),(0,255,0),1)
-    cv2.imshow('norm', img_dbg)
-    key = cv2.waitKey(0)
-    if key == 27: sys.exit(1)
+#print(cnts)
+#for c in cnts:
+#    cv2.rectangle(img_dbg,(c[0],c[1]),(c[0]+c[2],c[1]+c[3]),(0,255,0),1)
+#    cv2.imshow('norm', img_dbg)
+#    print(c[0], c[1], c[4])
+#    key = cv2.waitKey(0)
+#    if key == 27: sys.exit(1)
 
 #img_dbg = detect_contours(img_scale, closed)
 #img_dbg = detect_contours(img_scale, 255-gray)
