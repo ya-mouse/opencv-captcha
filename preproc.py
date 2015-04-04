@@ -342,6 +342,97 @@ def cut(img, rect):
     img = img*mask2[:,:,np.newaxis]
     return img
 
+class Rect:
+    def __init__(self, rect, area, cnt):
+        self._rect = rect
+        self._area = area
+        self._cnt = cnt
+
+    def __repr__(self):
+        return '<Rect ({},{}) ({}x{}) #{}>'.format(self.x, self.y, self.w, self.h, self.area)
+
+    @property
+    def x(self):
+        return self._rect[0]
+
+    @property
+    def y(self):
+        return self._rect[1]
+
+    @property
+    def w(self):
+        return self._rect[2]
+
+    @property
+    def h(self):
+        return self._rect[3]
+
+    @property
+    def area(self):
+        return self._area
+
+    @property
+    def cnt(self):
+        return self._cnt
+
+    @property
+    def wx(self):
+        return self.x + self.w
+
+    @property
+    def hy(self):
+        return self.y + self.h
+
+    @property
+    def top(self):
+        return (self.x, self.y)
+
+    @property
+    def bot(self):
+        return (self.wx, self.hy)
+
+class Group:
+    def __init__(self, rect):
+        if not isinstance(rect, Rect):
+            raise TypeError('Param {} is not instance of Rect'.format(rect))
+        self._maxx = [rect.wx, rect.wx+1, rect.wx+3]
+        self._rects = [rect]
+
+    def __repr__(self):
+        return '<Group #{}>'.format(len(self._rects))
+
+    def __lshift__(self, rect):
+        if not isinstance(rect, Rect):
+            raise TypeError('Param {} is not instance of Rect'.format(rect))
+        self._rects.append(rect)
+        self._maxx = [
+            max(self._maxx[0], rect.wx),
+            max(self._maxx[1], rect.wx+1),
+            max(self._maxx[2], rect.wx+3),
+        ]
+
+    def __iter__(self):
+        self._iter_pos = 0
+        self._iter_max = len(self._rects)
+        return self
+
+    def __next__(self):
+        if self._iter_pos == self._iter_max:
+            raise StopIteration
+        r = self._rects[self._iter_pos]
+        self._iter_pos += 1
+        return r
+
+    @property
+    def cur(self):
+        return self._rects[-1]
+
+    def ispart(self, nxt):
+        cur = self.cur
+        return  nxt.x < self._maxx[0] or \
+               (nxt.x == self._maxx[1] and cur.h/nxt.h > 0.9) or \
+               (nxt.x < self._maxx[2] and nxt.w < nxt.h and (nxt.area < 60 or cur.h/nxt.h > 1.5))
+
 def detect_contours(img_scale, mask):
     _,contours,_ = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, 4)
     contours = sorted(contours, key = cv2.contourArea, reverse = True)
@@ -355,6 +446,7 @@ def detect_contours(img_scale, mask):
     miny = rows
     maxy = 0
     cnts = []
+    rects = []
     for cnt in contours:
         peri = cv2.arcLength(cnt, True)
         approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
@@ -381,6 +473,7 @@ def detect_contours(img_scale, mask):
 #                    sys.exit()
                 preresponses.append([x, y, w, roi, '_'])
                 cnts.append([x, y, w, h, area])
+                rects.append(Rect((x,y,w,h), area, cnt))
                 maxy = max(maxy, y+h)
                 miny = min(miny, y)
 #                elif key in keys:
@@ -430,6 +523,7 @@ def detect_contours(img_scale, mask):
                     roi = img_scale[miny:maxy,x:x+w]
                     responses.append([x, miny, w, roi, '_'])
                     cnts.append([x, miny, w, h, area])
+                    rects.append(Rect((x,miny,w,h), area, cnt))
 #                    rsp = responses[-1]
 #                    cv2.imshow('norm', cut(img_scale.copy(), (rsp[0]-15, miny-10, rsp[2]+30, maxy-miny+20)))
 #                    key = cv2.waitKey(0)
@@ -439,6 +533,7 @@ def detect_contours(img_scale, mask):
             roi = img_scale[miny:maxy,r[0]:r[0]+r[2]]
             responses.append([r[0], miny, r[2], roi, '_'])
             cnts.append([r[0], miny, r[2], maxy-miny, r[4]])
+#            rects.append(Rect((x,y,w,h), area, cnt))
 
 #            rsp = responses[-1]
 #            cv2.imshow('norm', cut(img_scale.copy(), (rsp[0]-10, miny-10, rsp[2]+20, maxy-miny+20)))
@@ -465,42 +560,21 @@ def detect_contours(img_scale, mask):
       print(a, b, r)
       return r
 
-    cnts = sorted(cnts, key=lambda x: x[0])
-    if not cnts:
+    rects = sorted(rects, key=lambda r: r.x)
+    if not rects:
         return None, img_dbg
 #    cnts = sorted(cnts, key=functools.cmp_to_key(cmp_xx))
-    reduced = [[cnts[0]]]
-    t = len(cnts)-1
-    k = 0
+    reduced = [Group(rects[0])]
+    t = len(rects)-1
     i = 0
-    maxx0 = cnts[0][0] + cnts[0][2]
-    maxx1 = maxx0 + 1
-    maxx3 = maxx0 + 3
-    while i <= t:
-        cur = cnts[i]
-        if i != t:
-            nxt = cnts[i+1]
-            maxx0 = max(cur[0]+cur[2], maxx0)
-            maxx1 = max(cur[0]+cur[2]+1, maxx1)
-            maxx3 = max(cur[0]+cur[2]+3, maxx3)
-            # nxt.x < maxx0
-            # nxt.x == maxx0 + 1 пиксель
-            # ...nxt.x < maxx0 + 3 пикселя и область вертикально ориентированна (nxt.w < nxt.h)
-            # ...nxt.area < 60 или разница между высотой областей разл.в два раза
-            # TODO: сравнение по ширине близких друг к другу элементов
-            if nxt[0] < maxx0 or (nxt[0] == maxx1 and cur[3]/nxt[3] > 0.9) or (nxt[0] < maxx3 and nxt[2] < nxt[3] and (nxt[4] < 60 or cur[3]/nxt[3] > 1.5)):
-                print(k, i, nxt[0], cur[0]+cur[2], nxt[4], cur[3]/nxt[3])
-                reduced[k].append(nxt)
-                i += 1
-                continue
-            print(k, i, nxt[0], cur[0]+cur[2], nxt[4], cur[3]/nxt[3])
-#            print(k, i, nxt[0])
-            maxx0 = nxt[0] + nxt[2]
-            maxx1 = maxx1 + 1
-            maxx3 = maxx0 + 3
-            reduced.append([nxt])
-        i += 1
-        k += 1
+    for i in range(0,t):
+        nxt = rects[i+1]
+        if reduced[-1].ispart(nxt):
+            reduced[-1] << nxt
+        else:
+            print(i, nxt.x, nxt.area, reduced[-1].cur.h/nxt.h)
+            reduced.append(Group(nxt))
+
     colors = [
     (0,255,0),
     (0,255,255),
@@ -517,11 +591,11 @@ def detect_contours(img_scale, mask):
     t = len(reduced)-1
     while i <= t:
         cur = reduced[i]
-        if i != t:
-            nxt = reduced[i+1]
-            x0 = max(cur, key=lambda x: x[0]+x[2])
-            x1 = max(nxt, key=lambda x: x[0]+x[2])
-            print(i, abs(x0[0]+x0[2] - x1[0]))
+#        if i != t:
+#            nxt = reduced[i+1]
+#            x0 = max(cur, key=lambda x: x.wx)
+#            x1 = max(nxt, key=lambda x: x.wx)
+#            print(i, abs(x0.wx - x1.x))
         i += 1
 
     i = 0
@@ -529,9 +603,9 @@ def detect_contours(img_scale, mask):
         print(i, r)
         for c in r:
 #            print(c)
-            cv2.rectangle(img_dbg,(c[0],c[1]),(c[0]+c[2],c[1]+c[3]),colors[i],2)
+            cv2.rectangle(img_dbg,c.top,c.bot,colors[i],2)
         cv2.imshow('norm', img_dbg)
-#        print(c[0], c[1], c[4])
+#        print(c.x, c.y, c.area)
         key = cv2.waitKey(0)
         if key == 27: sys.exit(1)
         i += 1
