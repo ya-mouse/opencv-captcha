@@ -511,6 +511,19 @@ def detect_contours(img_scale, mask):
     (0,255,127),
     (127,255,127),
     ]
+
+    reduced2 = []
+    i = 0
+    t = len(reduced)-1
+    while i <= t:
+        cur = reduced[i]
+        if i != t:
+            nxt = reduced[i+1]
+            x0 = max(cur, key=lambda x: x[0]+x[2])
+            x1 = max(nxt, key=lambda x: x[0]+x[2])
+            print(i, abs(x0[0]+x0[2] - x1[0]))
+        i += 1
+
     i = 0
     for r in reduced:
         print(i, r)
