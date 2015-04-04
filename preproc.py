@@ -360,7 +360,7 @@ def detect_contours(img_scale, mask):
         approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
         area = cv2.contourArea(cnt)
         print('A', area)
-        if area > 15: # and area < 2500:
+        if area >= 3: # > 15 and area < 2500:
             [x,y,w,h] = cv2.boundingRect(cnt)
 #            print('{},{} {}x{}'.format(x,y,w,h))
 
@@ -380,7 +380,7 @@ def detect_contours(img_scale, mask):
 #                if key == 27:  # (escape to quit)
 #                    sys.exit()
                 preresponses.append([x, y, w, roi, '_'])
-                cnts.append([x, y, w, h])
+                cnts.append([x, y, w, h, area])
                 maxy = max(maxy, y+h)
                 miny = min(miny, y)
 #                elif key in keys:
@@ -429,7 +429,7 @@ def detect_contours(img_scale, mask):
                     cv2.rectangle(img_dbg,(x,miny),(x+w,maxy),(0,255,0),2)
                     roi = img_scale[miny:maxy,x:x+w]
                     responses.append([x, miny, w, roi, '_'])
-                    cnts.append([x, miny, w, h])
+                    cnts.append([x, miny, w, h, area])
 #                    rsp = responses[-1]
 #                    cv2.imshow('norm', cut(img_scale.copy(), (rsp[0]-15, miny-10, rsp[2]+30, maxy-miny+20)))
 #                    key = cv2.waitKey(0)
@@ -438,7 +438,7 @@ def detect_contours(img_scale, mask):
             cv2.rectangle(img_dbg,(r[0],miny),(r[0]+r[2],maxy),(255,0,0),2)
             roi = img_scale[miny:maxy,r[0]:r[0]+r[2]]
             responses.append([r[0], miny, r[2], roi, '_'])
-            cnts.append([r[0], miny, r[2], maxy-miny])
+            cnts.append([r[0], miny, r[2], maxy-miny, r[4]])
 
 #            rsp = responses[-1]
 #            cv2.imshow('norm', cut(img_scale.copy(), (rsp[0]-10, miny-10, rsp[2]+20, maxy-miny+20)))
@@ -466,24 +466,38 @@ def detect_contours(img_scale, mask):
       return r
 
     cnts = sorted(cnts, key=lambda x: x[0])
+    if not cnts:
+        return None, img_dbg
 #    cnts = sorted(cnts, key=functools.cmp_to_key(cmp_xx))
     reduced = [[cnts[0]]]
     t = len(cnts)-1
     k = 0
     i = 0
-    maxx = cnts[0][0] + cnts[0][2]
+    maxx0 = cnts[0][0] + cnts[0][2]
+    maxx1 = maxx0 + 1
+    maxx3 = maxx0 + 3
     while i <= t:
         cur = cnts[i]
         if i != t:
             nxt = cnts[i+1]
-            maxx = max(cur[0]+cur[2], maxx)
-            if nxt[0] < maxx:
-#                print(k, i, nxt[0], cur[0]+cur[2])
+            maxx0 = max(cur[0]+cur[2], maxx0)
+            maxx1 = max(cur[0]+cur[2]+1, maxx1)
+            maxx3 = max(cur[0]+cur[2]+3, maxx3)
+            # nxt.x < maxx0
+            # nxt.x == maxx0 + 1 пиксель
+            # ...nxt.x < maxx0 + 3 пикселя и область вертикально ориентированна (nxt.w < nxt.h)
+            # ...nxt.area < 60 или разница между высотой областей разл.в два раза
+            # TODO: сравнение по ширине близких друг к другу элементов
+            if nxt[0] < maxx0 or (nxt[0] == maxx1 and cur[3]/nxt[3] > 0.9) or (nxt[0] < maxx3 and nxt[2] < nxt[3] and (nxt[4] < 60 or cur[3]/nxt[3] > 1.5)):
+                print(k, i, nxt[0], cur[0]+cur[2], nxt[4], cur[3]/nxt[3])
                 reduced[k].append(nxt)
                 i += 1
                 continue
+            print(k, i, nxt[0], cur[0]+cur[2], nxt[4], cur[3]/nxt[3])
 #            print(k, i, nxt[0])
-            maxx = nxt[0] + nxt[2]
+            maxx0 = nxt[0] + nxt[2]
+            maxx1 = maxx1 + 1
+            maxx3 = maxx0 + 3
             reduced.append([nxt])
         i += 1
         k += 1
@@ -513,6 +527,8 @@ def detect_contours(img_scale, mask):
 img_scale = cv2.bitwise_and(pre.img, pre.img, mask=mask_and) #closed)
 
 cnts, img_dbg = detect_contours(img_scale, mask_and)
+# TODO: второй проход: удаление мелких областей, отстоящих на значительное расстояние (>w) от соседних групп
+
 #print(cnts)
 #for c in cnts:
 #    cv2.rectangle(img_dbg,(c[0],c[1]),(c[0]+c[2],c[1]+c[3]),(0,255,0),1)
