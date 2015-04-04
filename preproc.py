@@ -368,6 +368,10 @@ class Rect:
         return self._rect[3]
 
     @property
+    def rect(self):
+        return self._rect
+
+    @property
     def area(self):
         return self._area
 
@@ -395,20 +399,27 @@ class Group:
     def __init__(self, rect):
         if not isinstance(rect, Rect):
             raise TypeError('Param {} is not instance of Rect'.format(rect))
-        self._maxx = [rect.wx, rect.wx+1, rect.wx+3]
+        self._r = rect.rect
+        self._maxwx = [rect.wx, rect.wx+1, rect.wx+3]
         self._rects = [rect]
 
     def __repr__(self):
-        return '<Group #{}>'.format(len(self._rects))
+        return '<Group ({},{} {},{}) {}x{} #{}>'.format(self.x, self.y, self.wx, self.hy, self.w, self.h, len(self._rects))
 
     def __lshift__(self, rect):
         if not isinstance(rect, Rect):
             raise TypeError('Param {} is not instance of Rect'.format(rect))
         self._rects.append(rect)
-        self._maxx = [
-            max(self._maxx[0], rect.wx),
-            max(self._maxx[1], rect.wx+1),
-            max(self._maxx[2], rect.wx+3),
+        self._r = [
+            min(self._r[0], rect.x),
+            min(self._r[1], rect.y),
+            max(self.x+self.w, rect.wx) - self.x,
+            max(self.y+self.y, rect.hy) - self.y,
+        ]
+        self._maxwx = [
+            max(self._maxwx[0], rect.wx),
+            max(self._maxwx[1], rect.wx+1),
+            max(self._maxwx[2], rect.wx+3),
         ]
 
     def __iter__(self):
@@ -424,14 +435,42 @@ class Group:
         return r
 
     @property
-    def cur(self):
+    def last(self):
         return self._rects[-1]
 
+    @property
+    def x(self):
+        return self._r[0]
+
+    @property
+    def y(self):
+        return self._r[1]
+
+    @property
+    def w(self):
+        return self._r[2]
+
+    @property
+    def h(self):
+        return self._r[3]
+
+    @property
+    def wx(self):
+        return self.x + self.w
+
+    @property
+    def hy(self):
+        return self.y + self.h
+
+    @property
+    def area(self):
+        return cv2.contourArea(self._rects)
+
     def ispart(self, nxt):
-        cur = self.cur
-        return  nxt.x < self._maxx[0] or \
-               (nxt.x == self._maxx[1] and cur.h/nxt.h > 0.9) or \
-               (nxt.x < self._maxx[2] and nxt.w < nxt.h and (nxt.area < 60 or cur.h/nxt.h > 1.5))
+        last = self.last
+        return  nxt.x < self._maxwx[0] or \
+               (nxt.x == self._maxwx[1] and last.h/nxt.h > 0.9) or \
+               (nxt.x < self._maxwx[2] and nxt.w < nxt.h and (nxt.area < 60 or last.h/nxt.h > 1.5))
 
 def detect_contours(img_scale, mask):
     _,contours,_ = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, 4)
@@ -564,26 +603,26 @@ def detect_contours(img_scale, mask):
     if not rects:
         return None, img_dbg
 #    cnts = sorted(cnts, key=functools.cmp_to_key(cmp_xx))
-    reduced = [Group(rects[0])]
-    t = len(rects)-1
-    i = 0
-    for i in range(0,t):
-        nxt = rects[i+1]
+    reduced = []
+    for nxt in rects:
+        if not len(reduced):
+            reduced.append(Group(nxt))
+            continue
         if reduced[-1].ispart(nxt):
             reduced[-1] << nxt
         else:
-            print(i, nxt.x, nxt.area, reduced[-1].cur.h/nxt.h)
+            print(nxt.x, nxt.area, reduced[-1].last.h/nxt.h)
             reduced.append(Group(nxt))
 
     colors = [
-    (0,255,0),
-    (0,255,255),
-    (255,0,255),
-    (255,0,0),
-    (255,255,0),
-    (127,255,0),
-    (0,255,127),
-    (127,255,127),
+        (0,255,0),
+        (0,255,255),
+        (255,0,255),
+        (255,0,0),
+        (255,255,0),
+        (127,255,0),
+        (0,255,127),
+        (127,255,127),
     ]
 
     reduced2 = []
@@ -601,8 +640,8 @@ def detect_contours(img_scale, mask):
     i = 0
     for r in reduced:
         print(i, r)
+        print(r.area)
         for c in r:
-#            print(c)
             cv2.rectangle(img_dbg,c.top,c.bot,colors[i],2)
         cv2.imshow('norm', img_dbg)
 #        print(c.x, c.y, c.area)
