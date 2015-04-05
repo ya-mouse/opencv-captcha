@@ -395,13 +395,18 @@ class Rect:
     def bot(self):
         return (self.wx, self.hy)
 
+    def __get__(self, obj, klass):
+        print(self, obj, klass)
+        return super().__get__(obj, klass)
+
+
 class Group:
     def __init__(self, rect):
         if not isinstance(rect, Rect):
             raise TypeError('Param {} is not instance of Rect'.format(rect))
         self._r = rect.rect
         self._maxwx = [rect.wx, rect.wx+1, rect.wx+3]
-        self._rects = [rect]
+        self._rects = np.array([rect])
 
     def __repr__(self):
         return '<Group ({},{} {},{}) {}x{} #{}>'.format(self.x, self.y, self.wx, self.hy, self.w, self.h, len(self._rects))
@@ -409,7 +414,7 @@ class Group:
     def __lshift__(self, rect):
         if not isinstance(rect, Rect):
             raise TypeError('Param {} is not instance of Rect'.format(rect))
-        self._rects.append(rect)
+        self._rects = np.append(self._rects, [rect], 0)
         self._r = [
             min(self._r[0], rect.x),
             min(self._r[1], rect.y),
@@ -464,7 +469,8 @@ class Group:
 
     @property
     def area(self):
-        return cv2.contourArea(self._rects)
+        print(self._rects)
+        return 0 #return cv2.contourArea(self)
 
     def ispart(self, nxt):
         last = self.last
@@ -609,9 +615,10 @@ def detect_contours(img_scale, mask):
             reduced.append(Group(nxt))
             continue
         if reduced[-1].ispart(nxt):
+#            print(len(reduced), ':', nxt.x, nxt.area, reduced[-1].last.h/nxt.h)
             reduced[-1] << nxt
         else:
-            print(nxt.x, nxt.area, reduced[-1].last.h/nxt.h)
+            print(len(reduced), ':', nxt.x, nxt.area, reduced[-1].last.h/nxt.h)
             reduced.append(Group(nxt))
 
     colors = [
