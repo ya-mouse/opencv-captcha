@@ -182,6 +182,7 @@ if __name__ == '__main__':
         idx += 1
 
     print('preprocessing...')
+    digitsx = digits
     # shuffle digits
     rand = np.random.RandomState(int(np.random.rand()*100)) #321)
     shuffle = rand.permutation(len(digits))
@@ -213,7 +214,9 @@ if __name__ == '__main__':
     print([ABC[int(c)] for c in labels_test])
     print([ABC[int(c)] for c in resp])
     cv2.imshow('SVM test', vis)
-#    print('saving SVM as "digits_svm.dat"...')
-#    model.save('digits_svm.dat')
+    print('saving SVM as "grandbux_svm.dat"...')
+    model.save('grandbux_svm.dat')
+
+    cv2.imshow('SVM', mosaic(25, digitsx))
 
     cv2.waitKey(0)

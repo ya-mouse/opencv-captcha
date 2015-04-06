@@ -182,8 +182,8 @@ if __name__ == '__main__':
         idx += 1
 
     print('preprocessing...')
-    # shuffle digits
     digitsx = digits
+    # shuffle digits
     rand = np.random.RandomState(int(np.random.rand()*100)) #321)
     shuffle = rand.permutation(len(digits))
     digits, labels = digits[shuffle], labels[shuffle]
