@@ -225,8 +225,8 @@ def detect_contours(img_scale, mask):
                         h0 = h
                         area0 = area
                     hsv_img = hsv_img[y0:y0+h0,x0:x0+w0]
-                    cv2.imshow('norm2', hsv_img)
-                    key = cv2.waitKey(0)
+#                    cv2.imshow('norm2', hsv_img)
+#                    key = cv2.waitKey(0)
                     x0 += x
                     y0 += y
                     roi0 = img_scale[y0:y0+h0,x0:x0+w0]
@@ -387,9 +387,9 @@ dump = True
 if len(cnts) == 5 and dump:
     i = 0
     for r in cnts:
-        try: os.mkdir('out/{}'.format(sys.argv[1][i]))
+        try: os.mkdir('out-min/{}'.format(sys.argv[1][i]))
         except: pass
-        cv2.imwrite('out/{}/{}-{}'.format(sys.argv[1][i], i, sys.argv[1]), r.img)
+        cv2.imwrite('out-min/{}/{}-{}'.format(sys.argv[1][i], i, sys.argv[1]), cv2.resize(r.img, (20,20)))
         i += 1
 elif len(cnts) != 5:
     print('WRONG: {}'.format(sys.argv[1]))

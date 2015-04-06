@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import itertools as it
 
 class Preprocessor:
     def __init__(self, image):
@@ -184,34 +185,6 @@ class Preprocessor:
         self._img[:,-border:] = Preprocessor.whiteness(self._img[:,-border:])
         self._img[:,:border]  = Preprocessor.whiteness(self._img[:,:border])
 
-def water(img, thresh):
-    kernel = np.ones((3,3),np.uint8)
-    opening = cv2.morphologyEx(thresh,cv2.MORPH_OPEN,kernel, iterations = 2)
-
-    # sure background area
-    sure_bg = cv2.dilate(opening,kernel,iterations=3)
-
-    # Finding sure foreground area
-    dist_transform = cv2.distanceTransform(opening,2,5)
-    ret, sure_fg = cv2.threshold(dist_transform,0.7*dist_transform.max(),255,0)
-
-    # Finding unknown region
-    sure_fg = np.uint8(sure_fg)
-    unknown = cv2.subtract(sure_bg,sure_fg)
-
-    # Marker labelling
-    ret, markers = cv2.connectedComponents(sure_fg)
-
-    # Add one to all labels so that sure background is not 0, but 1
-    markers += 1
-
-    # Now, mark the region of unknown with zero
-    markers[unknown==255] = 0
-
-    markers = cv2.watershed(img,markers)
-    img[markers == -1] = [255,0,0]
-    return sure_fg, sure_bg, markers, img
-
 class Rect:
     def __init__(self, rect, area, cnt, img):
         self._rect = rect
@@ -356,3 +329,52 @@ class Group:
         return  nxt.x < self._maxwx[0] or \
                (nxt.x == self._maxwx[1] and last.h/nxt.h > 0.9) or \
                (nxt.x < self._maxwx[2] and nxt.w < nxt.h and (nxt.area < 60 or last.h/nxt.h > 1.5))
+
+def clock():
+    return cv2.getTickCount() / cv2.getTickFrequency()
+
+def grouper(n, iterable, fillvalue=None):
+    '''grouper(3, 'ABCDEFG', 'x') --> ABC DEF Gxx'''
+    args = [iter(iterable)] * n
+    return it.zip_longest(fillvalue=fillvalue, *args)
+
+def mosaic(w, imgs):
+    '''Make a grid from images.
+
+    w    -- number of grid columns
+    imgs -- images (must have same size and format)
+    '''
+    imgs = iter(imgs)
+    img0 = imgs.__next__()
+    pad = np.zeros_like(img0)
+    imgs = it.chain([img0], imgs)
+    rows = grouper(w, imgs, pad)
+    return np.vstack(map(np.hstack, rows))
+
+def water(img, thresh):
+    kernel = np.ones((3,3),np.uint8)
+    opening = cv2.morphologyEx(thresh,cv2.MORPH_OPEN,kernel, iterations = 2)
+
+    # sure background area
+    sure_bg = cv2.dilate(opening,kernel,iterations=3)
+
+    # Finding sure foreground area
+    dist_transform = cv2.distanceTransform(opening,2,5)
+    ret, sure_fg = cv2.threshold(dist_transform,0.7*dist_transform.max(),255,0)
+
+    # Finding unknown region
+    sure_fg = np.uint8(sure_fg)
+    unknown = cv2.subtract(sure_bg,sure_fg)
+
+    # Marker labelling
+    ret, markers = cv2.connectedComponents(sure_fg)
+
+    # Add one to all labels so that sure background is not 0, but 1
+    markers += 1
+
+    # Now, mark the region of unknown with zero
+    markers[unknown==255] = 0
+
+    markers = cv2.watershed(img,markers)
+    img[markers == -1] = [255,0,0]
+    return sure_fg, sure_bg, markers, img
