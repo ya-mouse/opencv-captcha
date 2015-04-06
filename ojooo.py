@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+import os
 import cv2
 import sys
 import numpy as np
@@ -132,6 +133,39 @@ def cut(img, rect):
     img = img*mask2[:,:,np.newaxis]
     return img
 
+def extract_contour(shape, grp):
+    colors = [
+        (0,255,0),
+        (0,255,255),
+        (255,0,255),
+        (255,0,0),
+        (255,255,0),
+        (127,255,0),
+        (0,255,127),
+        (127,255,127),
+    ]
+
+    img = np.zeros(shape, np.uint8)
+    for c in grp:
+        #cv2.rectangle(img_dbg,c.top,c.bot,colors[i],2)
+        img[c.y:c.hy, c.x:c.wx] = c.img
+#        print(c.x, c.y, c.w, c.h, c.area)
+
+    _,contours,_ = cv2.findContours(img.copy(), cv2.RETR_EXTERNAL, 4)
+    contours = sorted(contours, key = cv2.contourArea, reverse = True)
+
+    y0, x0 = shape
+    w0 = h0 = 0
+
+    for cnt in contours:
+        [x,y,w,h] = cv2.boundingRect(cnt)
+        x0 = min(x0, x)
+        y0 = min(y0, y)
+        w0 = max(w0, x+w)
+        h0 = max(h0, y+h)
+
+    return img[y0:h0, x0:w0]
+
 def detect_contours(img_scale, mask):
     _,contours,_ = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, 4)
     contours = sorted(contours, key = cv2.contourArea, reverse = True)
@@ -160,7 +194,8 @@ def detect_contours(img_scale, mask):
 #            key = cv2.waitKey(0)
             if x > 20: #h > 25 and x > 20:
                 cv2.rectangle(img_dbg,(x,y),(x+w,y+h),(0,0,255),2)
-                roi = img_scale[y:y+h,x:x+w]
+#                roi = img_scale[y:y+h,x:x+w]
+                roi = mask[y:y+h,x:x+w]
 #                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (4, 4))
 #                roi = cv2.morphologyEx(roi, cv2.MORPH_CLOSE, kernel)
 #                roi = cv2.erode(roi, None, iterations = 2)
@@ -172,7 +207,7 @@ def detect_contours(img_scale, mask):
 #                    sys.exit()
                 preresponses.append([x, y, w, roi, '_'])
                 cnts.append([x, y, w, h, area])
-                rects.append(Rect((x,y,w,h), area, cnt))
+                rects.append(Rect((x,y,w,h), area, cnt, roi))
                 maxy = max(maxy, y+h)
                 miny = min(miny, y)
 #                elif key in keys:
@@ -222,7 +257,7 @@ def detect_contours(img_scale, mask):
                     roi = img_scale[miny:maxy,x:x+w]
                     responses.append([x, miny, w, roi, '_'])
                     cnts.append([x, miny, w, h, area])
-                    rects.append(Rect((x,miny,w,h), area, cnt))
+                    rects.append(Rect((x,miny,w,h), area, cnt, hsv_img))
 #                    rsp = responses[-1]
 #                    cv2.imshow('norm', cut(img_scale.copy(), (rsp[0]-15, miny-10, rsp[2]+30, maxy-miny+20)))
 #                    key = cv2.waitKey(0)
@@ -275,17 +310,6 @@ def detect_contours(img_scale, mask):
             print(len(reduced), ':', nxt.x, nxt.area, reduced[-1].last.h/nxt.h)
             reduced.append(Group(nxt))
 
-    colors = [
-        (0,255,0),
-        (0,255,255),
-        (255,0,255),
-        (255,0,0),
-        (255,255,0),
-        (127,255,0),
-        (0,255,127),
-        (127,255,127),
-    ]
-
     reduced2 = []
     i = 0
     t = len(reduced)-1
@@ -300,21 +324,35 @@ def detect_contours(img_scale, mask):
 
     i = 0
     for r in reduced:
-        print(i, r)
-        print(r.area)
-        for c in r:
-            cv2.rectangle(img_dbg,c.top,c.bot,colors[i],2)
-        cv2.imshow('norm', img_dbg)
-#        print(c.x, c.y, c.area)
-        key = cv2.waitKey(0)
-        if key == 27: sys.exit(1)
+        r.img = extract_contour((cols,rows), r)
+#        cv2.imshow('norm', r.img)
+#        key = cv2.waitKey(0)
+#        if key == 27: sys.exit(1)
         i += 1
-    return cnts, img_dbg
+    return reduced, img_dbg
 
 img_scale = cv2.bitwise_and(pre.img, pre.img, mask=mask_and) #closed)
 
 cnts, img_dbg = detect_contours(img_scale, mask_and)
 # TODO: второй проход: удаление мелких областей, отстоящих на значительное расстояние (>w) от соседних групп
+
+dump = True
+if not cnts:
+    print('WRONG: {}'.format(sys.argv[1]))
+    sys.exit(0)
+
+if len(cnts) == 5 and dump:
+    i = 0
+    for r in cnts:
+        try: os.mkdir('out-min/{}'.format(sys.argv[1][i]))
+        except: pass
+        cv2.imwrite('out-min/{}/{}-{}'.format(sys.argv[1][i], i, sys.argv[1]), cv2.resize(r.img, (20,20)))
+        i += 1
+elif len(cnts) != 5:
+    print('WRONG: {}'.format(sys.argv[1]))
+
+if dump:
+    sys.exit(0)
 
 #print(cnts)
 #for c in cnts:

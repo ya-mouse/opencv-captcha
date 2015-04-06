@@ -253,6 +253,7 @@ class Group:
         if not isinstance(rect, Rect):
             raise TypeError('Param {} is not instance of Rect'.format(rect))
         self._r = rect.rect
+        self._img = None
         self._maxwx = [rect.wx, rect.wx+1, rect.wx+3]
         self._rects = np.array([rect])
 
@@ -289,7 +290,13 @@ class Group:
 
     @property
     def img(self):
+        if self._img is not None:
+            return self._img
         return self._rects[0].img
+
+    @img.setter
+    def img(self, value):
+        self._img = value
 
     @property
     def last(self):
