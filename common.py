@@ -556,7 +556,7 @@ class OCR:
         return resp, mosaic(10, vis)
 
     def preprocess_simple(self, digits):
-        return np.float32(digits).reshape(-1, SZ*SZ) / 255.0
+        return np.float32(digits).reshape(-1, self._class_n*self._class_n) / 255.0
 
     def preprocess_hog(self, digits):
         samples = []
