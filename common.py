@@ -1,5 +1,7 @@
 import cv2
+import os
 import numpy as np
+from numpy.linalg import norm
 import itertools as it
 
 class Preprocessor:
@@ -185,6 +187,49 @@ class Preprocessor:
         self._img[:,-border:] = Preprocessor.whiteness(self._img[:,-border:])
         self._img[:,:border]  = Preprocessor.whiteness(self._img[:,:border])
 
+    def segmentate(self):
+        self._cnts = []
+
+    def segments(self, sz):
+        self.segmentate()
+        digits = None
+        for r in self._cnts:
+            img = cv2.resize(r.img, (sz, sz))
+            if digits is None:
+                digits = np.array([img])
+            else:
+                digits = np.append(digits, [img], axis=0)
+        return digits
+
+    def showdbg(self):
+        cols,rows,_ = self.img.shape
+
+        img = np.ndarray((cols*5,rows,3), dtype=np.uint8)
+        img[:cols] = self._img_orig
+        img[cols:cols*2] = self._img_dbg
+        img[cols*2:-cols*2] = cv2.cvtColor(255-self._mask_and, cv2.COLOR_GRAY2BGR)
+        img[-cols*2:-cols] = cv2.cvtColor(self._gray, cv2.COLOR_GRAY2BGR)
+        img[-cols:] = cv2.cvtColor(self._closed, cv2.COLOR_GRAY2BGR)
+        cv2.imshow('SHOW', img)
+        return cv2.waitKey(0)
+
+    def dump(self, dname, sz=None):
+        if len(self._cnts) != 5:
+            print('WRONG: {}'.format(self._fname))
+            return
+        i = 0
+        try: os.mkdir(dname)
+        except: pass
+        for r in self._cnts:
+            try: os.mkdir('{}/{}'.format(dname, self._fname[i]))
+            except: pass
+            outname = '{}/{}/{}-{}'.format(dname, self._fname[i], i, self._fname)
+            if sz is None:
+                cv2.imwrite(outname, r.img)
+            else:
+                cv2.imwrite(outname, cv2.resize(r.img, (sz, sz)))
+            i += 1
+
 class Rect:
     def __init__(self, rect, area, cnt, img):
         self._rect = rect
@@ -337,6 +382,191 @@ class Group:
                (nxt.x == self._maxwx[1] and last.h/nxt.h > 0.9) or \
                (nxt.x < self._maxwx[2] and nxt.w < nxt.h and (nxt.area < 60 or last.h/nxt.h > 1.5))
 
+class StatModel(object):
+    def load(self, fn):
+        self.model.load(fn)
+    def save(self, fn):
+        self.model.save(fn)
+
+class KNearest(StatModel):
+    def __init__(self, k = 3):
+        self.k = k
+        self.model = cv2.ml.KNearest_create()
+
+    def train(self, samples, responses):
+        self.model = cv2.ml.KNearest_create()
+        self.model.train(samples, layout=0, responses=responses)
+
+    def predict(self, samples):
+        retval, results, neigh_resp, dists = self.model.findNearest(samples, self.k)
+        return results.ravel()
+
+class SVM(StatModel):
+    def __init__(self, C = 1, gamma = 0.5):
+        self.params = dict( kernel_type = cv2.ml.SVM_RBF,
+                            svm_type = cv2.ml.SVM_C_SVC,
+                            C = C,
+                            gamma = gamma )
+        self.model = cv2.ml.SVM_create()
+        self.model.setKernel(self.params['kernel_type'])
+        self.model.setType(self.params['svm_type'])
+        self.model.setC(self.params['C'])
+        self.model.setGamma(self.params['gamma'])
+
+    def train(self, samples, responses):
+        self.model = cv2.ml.SVM_create()
+        self.model.setKernel(self.params['kernel_type'])
+        self.model.setType(self.params['svm_type'])
+        self.model.setC(self.params['C'])
+        self.model.setGamma(self.params['gamma'])
+        self.model.train(samples, layout=0, responses=responses)
+
+    def predict(self, samples):
+        return self.model.predict(samples)[1].ravel()
+
+class OCR:
+    def __init__(self, ABC, model):
+        self._ABC = ABC
+        self._model = model
+        self._class_n = len(ABC)
+
+    def load(self, datafile):
+        self._model.load(datafile)
+
+    def train(self, dname, datafile, percent=0.98):
+        digits = None
+        labels = None
+        idx = 0
+        for l in self._ABC:
+            digits0, labels0 = self.load_digits('{}/{}'.format(dname, l), idx)
+            if digits is None:
+                digits = digits0
+                labels = labels0
+            else:
+                digits = np.append(digits, digits0, axis=0)
+                labels = np.append(labels, labels0, axis=0)
+            idx += 1
+
+        self._digits = digits
+
+        # shuffle digits
+        rand = np.random.RandomState(int(np.random.rand()*100)) #321)
+        shuffle = rand.permutation(len(digits))
+        digits, labels = digits[shuffle], labels[shuffle]
+
+        digits2 = list(map(self.deskew, digits))
+        samples = self.preprocess_hog(digits2)
+
+        if percent == 1.0:
+            samples_train = samples
+            labels_train = labels
+        else:
+            train_n = int(percent*len(samples))
+            cv2.imshow('test set', mosaic(10, digits[train_n:]))
+            digits_train, digits_test = np.split(digits2, [train_n])
+            samples_train, samples_test = np.split(samples, [train_n])
+            labels_train, labels_test = np.split(labels, [train_n])
+
+        self._model.train(samples_train, labels_train)
+
+        if percent != 1.0:
+            resp, vis = self.evaluate(digits_test, samples_test, labels_test)
+            print([self._ABC[int(c)] for c in labels_test])
+            print([self._ABC[int(c)] for c in resp])
+            cv2.imshow('SVM test', vis)
+
+        self._model.save(datafile)
+        cv2.imwrite(datafile+'.png', mosaic(25, self._digits))
+
+    @property
+    def digits(self):
+        return self._digits
+
+    def split2d(img, cell_size, flatten=True):
+        h, w = img.shape[:2]
+        sx, sy = cell_size
+        cells = [np.hsplit(row, w//sx) for row in np.vsplit(img, h//sy)]
+        cells = np.array(cells)
+        if flatten:
+            cells = cells.reshape(-1, sy, sx)
+        return cells
+
+    def load_digits(self, dname, idx):
+        print('loading from "%s"...' % (dname))
+        digits = None
+        for f in os.listdir(dname):
+            digits_img = cv2.imread('{}/{}'.format(dname, f), 0)
+            if digits is None:
+                digits = np.array([digits_img])
+            else:
+                digits = np.append(digits, [digits_img], axis=0)
+#            digits.append(split2d(digits_img, (SZ, SZ)))
+        labels = np.repeat(idx, len(digits))
+        return digits, labels
+
+    def deskew(self, img):
+        m = cv2.moments(img)
+        if abs(m['mu02']) < 1e-2:
+            return img.copy()
+        skew = m['mu11']/m['mu02']
+        M = np.float32([[1, skew, -0.5*self._class_n*skew], [0, 1, 0]])
+#        img = cv2.warpAffine(img, M, (self._class_n, self._class_n), flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR)
+        return img
+
+    def predict(self, samples):
+        return self._model.predict(samples)
+
+    def labels(self, predicted):
+        return [self._ABC[int(i)] for i in predicted]
+
+    def evaluate(self, digits, samples, labels):
+        resp = self.predict(samples)
+        print(labels)
+        err = (labels != resp).mean()
+        print('error: %.2f %%' % (err*100))
+
+        confusion = np.zeros((self._class_n, self._class_n), np.int32)
+        for i, j in zip(labels, resp):
+            confusion[i, j] += 1
+        print('confusion matrix:')
+#        print(confusion)
+        print()
+
+        vis = []
+        for img, flag in zip(digits, resp == labels):
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            if not flag:
+                img[...,:2] = 0
+            vis.append(img)
+        return resp, mosaic(10, vis)
+
+    def preprocess_simple(self, digits):
+        return np.float32(digits).reshape(-1, SZ*SZ) / 255.0
+
+    def preprocess_hog(self, digits):
+        samples = []
+        for img in digits:
+            gx = cv2.Sobel(img, cv2.CV_32F, 1, 0)
+            gy = cv2.Sobel(img, cv2.CV_32F, 0, 1)
+            mag, ang = cv2.cartToPolar(gx, gy)
+            bin_n = 16
+            bin = np.int32(bin_n*ang/(2*np.pi))
+            bin_cells = bin[:10,:10], bin[10:,:10], bin[:10,10:], bin[10:,10:]
+            mag_cells = mag[:10,:10], mag[10:,:10], mag[:10,10:], mag[10:,10:]
+#            bin_cells = bin[:26,:26], bin[26:,:26], bin[:26,26:], bin[26:,26:]
+#            mag_cells = mag[:26,:26], mag[26:,:26], mag[:26,26:], mag[26:,26:]
+            hists = [np.bincount(b.ravel(), m.ravel(), bin_n) for b, m in zip(bin_cells, mag_cells)]
+            hist = np.hstack(hists)
+
+            # transform to Hellinger kernel
+            eps = 1e-7
+            hist /= hist.sum() + eps
+            hist = np.sqrt(hist)
+            hist /= norm(hist) + eps
+
+            samples.append(hist)
+        return np.float32(samples)
+
 def clock():
     return cv2.getTickCount() / cv2.getTickFrequency()
 
@@ -385,3 +615,63 @@ def water(img, thresh):
     markers = cv2.watershed(img,markers)
     img[markers == -1] = [255,0,0]
     return sure_fg, sure_bg, markers, img
+
+def mask_by_hsv(pre, gray=None):
+    if gray is None:
+        gray = pre.hsv_threshold()
+    gray = 255 - gray
+    gray[:,:110] = 0
+    gray[:,-110:] = 0
+    gray[:35] = 0
+    gray[-35:] = 0
+
+    masked = cv2.bitwise_and(pre.img, pre.img, mask=gray)
+    mean = cv2.mean(pre.img, mask=gray)
+
+    color = np.uint8([[mean[:3]]])
+    hsv_color = cv2.cvtColor(color, cv2.COLOR_BGR2HSV)
+    h = hsv_color[0][0][0]
+    print(hsv_color)
+    color_lo = np.array([h-10, 100, 100])
+    color_up = np.array([h+10, 255, 255])
+
+    hsv_img = cv2.inRange(pre.hsv(), color_lo, color_up)
+    masked = cv2.bitwise_and(pre.img, pre.img, mask=hsv_img)
+
+    return masked
+
+def cut_bg(img, cnts):
+    minx = img.shape[1]
+    maxy = img.shape[0]
+    maxx = 0
+    for cnt in cnts:
+        area = cv2.contourArea(cnt)
+        if area > 50 and area < 2500:
+            [x,y,w,h] = cv2.boundingRect(cnt)
+            minx = min(minx, x)
+            maxx = max(maxx, x+w)
+
+    mask_bg = np.zeros(img.shape[:2],np.uint8)
+
+    bgdModel = np.zeros((1,65),np.float64)
+    fgdModel = np.zeros((1,65),np.float64)
+
+    rect = (minx-5,15,maxx+5,maxy-15)
+    print(rect)
+    cv2.grabCut(img,mask_bg,rect,bgdModel,fgdModel,5,cv2.GC_INIT_WITH_RECT)
+
+    mask2 = np.where((mask_bg==2)|(mask_bg==0),0,1).astype('uint8')
+    cv2.rectangle(img,rect[:2],rect[2:],(0,0,255),2)
+    return img*mask2[:,:,np.newaxis]
+
+def cut(img, rect):
+    mask = np.zeros(img.shape[:2],np.uint8)
+
+    bgdModel = np.zeros((1,65),np.float64)
+    fgdModel = np.zeros((1,65),np.float64)
+
+    cv2.grabCut(img,mask,rect,bgdModel,fgdModel,5,cv2.GC_INIT_WITH_RECT)
+
+    mask2 = np.where((mask==2)|(mask==0),0,1).astype('uint8')
+    img = img*mask2[:,:,np.newaxis]
+    return img
