@@ -431,7 +431,20 @@ class OCR:
         self._class_n = len(ABC)
 
     def load(self, datafile):
-        self._model.load(datafile)
+#        self._model.load(datafile)
+        img = cv2.imread(datafile+'.png', 0)
+        self._labels = labels = np.loadtxt(datafile+'.txt', np.int64)
+        digits = np.array(self.split2d(img, (20, 20)))
+
+        if len(self._labels) != len(digits):
+            digits, _ = np.split(digits, [len(self._labels)])
+
+        self._digits = digits
+
+        digits2 = list(map(self.deskew, digits))
+        samples = self.preprocess_hog(digits2)
+
+        self._model.train(samples, labels)
 
     def train(self, dname, datafile, percent=0.98):
         digits = None
@@ -448,6 +461,7 @@ class OCR:
             idx += 1
 
         self._digits = digits
+        self._labels = labels
 
         # shuffle digits
         rand = np.random.RandomState(int(np.random.rand()*100)) #321)
@@ -476,13 +490,14 @@ class OCR:
             cv2.imshow('SVM test', vis)
 
         self._model.save(datafile)
+        np.savetxt(datafile+'.txt', self._labels, '%d')
         cv2.imwrite(datafile+'.png', mosaic(25, self._digits))
 
     @property
     def digits(self):
         return self._digits
 
-    def split2d(img, cell_size, flatten=True):
+    def split2d(self, img, cell_size, flatten=True):
         h, w = img.shape[:2]
         sx, sy = cell_size
         cells = [np.hsplit(row, w//sx) for row in np.vsplit(img, h//sy)]

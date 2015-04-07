@@ -15,8 +15,8 @@ if __name__ == '__main__':
     ocr = OCR(ABC, model)
     do_load = len(sys.argv) > 1
     if do_load:
-        ocr.train('out-min', 'grandbux_svm.dat', 1.0)
-#        ocr.load('grandbux_svm.dat')
+#        ocr.train('out-min', 'grandbux_svm.dat', 1.0)
+        ocr.load('grandbux_svm.dat')
         samples = ocr.preprocess_hog(Grandbux(sys.argv[1]).segments(20))
         print('SOLVE: {}'.format(''.join(ocr.labels(ocr.predict(samples)))))
     else:
