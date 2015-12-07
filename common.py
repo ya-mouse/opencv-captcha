@@ -54,9 +54,9 @@ class Preprocessor:
         s = img_hsv[:,:,1]
         v = img_hsv[:,:,2]
         lev = img_hsv[:,:,level]
-#        cv2.imshow('lev_h', h)
-#        cv2.imshow('lev_s', s)
-#        cv2.imshow('lev_v', v)
+        cv2.imshow('lev_h', h)
+        cv2.imshow('lev_s', s)
+        cv2.imshow('lev_v', v)
 #        cv2.waitKey(0)
 
         _, lev = self.levels(minv, maxv, gamma, lev)
@@ -193,8 +193,10 @@ class Preprocessor:
     def segments(self, sz):
         self.segmentate()
         digits = None
+        if isinstance(sz, int):
+            sz = (sz, sz)
         for r in self._cnts:
-            img = cv2.resize(r.img, (sz, sz))
+            img = cv2.resize(r.img, sz)
             if digits is None:
                 digits = np.array([img])
             else:
@@ -430,11 +432,11 @@ class OCR:
         self._model = model
         self._class_n = len(ABC)
 
-    def load(self, datafile):
+    def load(self, datafile, rect=(20,20), detect_fn=None):
 #        self._model.load(datafile)
         img = cv2.imread(datafile+'.png', 0)
         self._labels = labels = np.loadtxt(datafile+'.txt', np.int64)
-        digits = np.array(self.split2d(img, (20, 20)))
+        digits = np.array(self.split2d(img, rect))
 
         if len(self._labels) != len(digits):
             digits, _ = np.split(digits, [len(self._labels)])
@@ -442,11 +444,14 @@ class OCR:
         self._digits = digits
 
         digits2 = list(map(self.deskew, digits))
-        samples = self.preprocess_hog(digits2)
+        if detect_fn is None:
+            samples = self.preprocess_hog(digits2)
+        else:
+            samples = detect_fn(self, digits2)
 
         self._model.train(samples, labels)
 
-    def train(self, dname, datafile, percent=0.98):
+    def train(self, dname, datafile, percent=0.98, detect_fn=None):
         digits = None
         labels = None
         idx = 0
@@ -469,7 +474,10 @@ class OCR:
         digits, labels = digits[shuffle], labels[shuffle]
 
         digits2 = list(map(self.deskew, digits))
-        samples = self.preprocess_hog(digits2)
+        if detect_fn is None:
+            samples = self.preprocess_hog(digits2)
+        else:
+            samples = detect_fn(self, digits2)
 
         if percent == 1.0:
             samples_train = samples
@@ -500,6 +508,7 @@ class OCR:
     def split2d(self, img, cell_size, flatten=True):
         h, w = img.shape[:2]
         sx, sy = cell_size
+        print(h, sy, w, sx, cell_size)
         cells = [np.hsplit(row, w//sx) for row in np.vsplit(img, h//sy)]
         cells = np.array(cells)
         if flatten:
@@ -556,7 +565,20 @@ class OCR:
         return resp, mosaic(10, vis)
 
     def preprocess_simple(self, digits):
-        return np.float32(digits).reshape(-1, self._class_n*self._class_n) / 255.0
+        return np.float32(digits).reshape(-1, self._class_n*self._class_m) / 255.0
+
+    def hist(self, im):
+        h = np.zeros((300,256,3))
+        if len(im.shape)!=2:
+            #print "so converting image to grayscale for representation"
+            im = cv2.cvtColor(im,cv2.COLOR_BGR2GRAY)
+        hist_item = cv2.calcHist([im],[0],None,[256],[0,256])
+        cv2.normalize(hist_item,hist_item,0,255,cv2.NORM_MINMAX)
+        hist=np.int32(np.around(hist_item))
+        for x,y in enumerate(hist):
+            cv2.line(h,(x,0),(x,y),(255,255,255))
+        y = np.flipud(h)
+        return y
 
     def preprocess_hog(self, digits):
         samples = []
